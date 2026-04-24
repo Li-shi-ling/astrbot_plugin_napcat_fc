@@ -1,19 +1,4 @@
 {
-  "base_url": {
-    "type": "string",
-    "description": "NapCat OneBot HTTP 地址，例如 http://127.0.0.1:3000",
-    "default": "http://127.0.0.1:3000"
-  },
-  "access_token": {
-    "type": "string",
-    "description": "OneBot 访问令牌；为空时不发送 Authorization 头",
-    "default": ""
-  },
-  "timeout": {
-    "type": "float",
-    "description": "接口请求超时时间，单位秒",
-    "default": 30.0
-  },
   "tool_prefix": {
     "type": "string",
     "description": "注册给 LLM 的函数工具名前缀",

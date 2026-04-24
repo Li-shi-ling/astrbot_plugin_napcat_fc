@@ -6,7 +6,6 @@ from pathlib import Path
 
 from astrbot.api import FunctionTool
 
-from napcat_fc.client import NapCatClient
 from napcat_fc.tools import build_endpoint_tool
 
 
@@ -81,7 +80,6 @@ def discover_markdown_heading_specs(docs_dir: Path) -> list[EndpointSpec]:
 
 def build_endpoint_tools(
     specs: list[EndpointSpec],
-    client: NapCatClient,
     tool_prefix: str = "napcat",
 ) -> list[FunctionTool]:
     names: set[str] = set()
@@ -91,7 +89,7 @@ def build_endpoint_tools(
         if tool_name in names:
             tool_name = f"{tool_name}_{abs(hash(spec.endpoint)) % 10000}"
         names.add(tool_name)
-        tools.append(build_endpoint_tool(client=client, spec=spec, tool_name=tool_name))
+        tools.append(build_endpoint_tool(spec=spec, tool_name=tool_name))
     return tools
 
 

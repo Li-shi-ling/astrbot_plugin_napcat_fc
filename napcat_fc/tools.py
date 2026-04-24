@@ -4,7 +4,7 @@ from typing import Any
 
 from astrbot.api import FunctionTool
 
-from napcat_fc.client import NapCatClient
+from napcat_fc.aiocqhttp_api import call_aiocqhttp_action
 
 
 PAYLOAD_SCHEMA = {
@@ -21,14 +21,11 @@ PAYLOAD_SCHEMA = {
 
 
 def build_endpoint_tool(
-    client: NapCatClient,
     spec: Any,
     tool_name: str,
 ) -> FunctionTool:
-    async def handler(_event, payload: dict[str, Any]) -> str:
-        if not isinstance(payload, dict):
-            raise ValueError("payload 必须是对象。")
-        return await client.request(spec.endpoint, payload)
+    async def handler(event, payload: dict[str, Any]) -> str:
+        return await call_aiocqhttp_action(event, spec.endpoint, payload)
 
     return FunctionTool(
         name=tool_name,
@@ -42,13 +39,10 @@ def build_endpoint_tool(
 
 
 def build_generic_call_tool(
-    client: NapCatClient,
     tool_name: str = "napcat_call_api",
 ) -> FunctionTool:
-    async def handler(_event, endpoint: str, payload: dict[str, Any]) -> str:
-        if not isinstance(payload, dict):
-            raise ValueError("payload 必须是对象。")
-        return await client.request(endpoint, payload)
+    async def handler(event, endpoint: str, payload: dict[str, Any]) -> str:
+        return await call_aiocqhttp_action(event, endpoint, payload)
 
     return FunctionTool(
         name=tool_name,

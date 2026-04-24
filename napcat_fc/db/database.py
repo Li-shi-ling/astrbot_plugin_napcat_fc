@@ -106,6 +106,7 @@ class ToolDBManager:
 
         return {
             tables.NapcatToolRecord.__table__.name: tables.NapcatToolRecord.__table__,
+            tables.NapcatDiscoveredToolRecord.__table__.name: tables.NapcatDiscoveredToolRecord.__table__,
         }
 
     @asynccontextmanager

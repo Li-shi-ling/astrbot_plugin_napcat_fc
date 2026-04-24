@@ -1,1 +1,8 @@
-{}
+{
+  "dynamic_injection_enabled": {
+    "description": "是否在 LLM 请求阶段注入已发现的 NapCat 工具。关闭后仍保留搜索工具，但不会注入已发现工具。",
+    "type": "bool",
+    "hint": "保持开启可让 napcat_search_tools 搜索到的工具在后续请求中继续可用。",
+    "default": true
+  }
+}

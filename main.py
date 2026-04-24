@@ -21,9 +21,12 @@ from napcat_fc.tool_registry import build_tool_registry_data
     "astrbot_plugin_napcat_fc",
     "Soulter / AstrBot contributors",
     "将 NapCat / OneBot / go-cqhttp API 注册为 AstrBot 函数工具。",
-    "1.9.0",
+    "1.10.0",
 )
 class NapCatFunctionToolsPlugin(Star):
+    SEARCH_TOOL_NAME = "napcat_search_tools"
+    SEARCH_RESULT_LIMIT = 3
+    DISCOVERED_TOOL_LIMIT = 20
     WINDOWS_TOOL_NAMES = (
         'napcat_dot_ocr_image',
         'napcat_ocr_image',
@@ -64,21 +67,29 @@ class NapCatFunctionToolsPlugin(Star):
     ):
         """在 LLM 请求阶段按工具管理数据库动态注入 NapCat 工具。"""
         self._unload_request_scope_napcat_tools(req)
+        self._ensure_request_tool_set(req)
+        req.func_tool.add_tool(self._build_search_tool(req))
         if self.config.get("dynamic_injection_enabled", True) is False:
             return
 
-        records = await self.tool_registry_repo.list_tools(enabled_only=True)
-        records_by_name = {record.tool_name: record for record in records}
-        if not records_by_name:
-            return
+        discovered_tool_names = await self.tool_registry_repo.list_discovered_tool_names()
+        injected_count = self._inject_tool_names_into_request(req, discovered_tool_names)
+        if injected_count:
+            logger.debug(f"本轮 LLM 请求注入已发现 NapCat 工具：{injected_count} 个。")
 
+    def _ensure_request_tool_set(self, req: ProviderRequest):
         if req.func_tool is None:
             req.func_tool = ToolSet()
 
+    def _inject_tool_names_into_request(
+        self, req: ProviderRequest, tool_names: list[str]
+    ) -> int:
+        self._ensure_request_tool_set(req)
         tool_mgr = self.context.get_llm_tool_manager()
         injected_count = 0
-        for tool_name in self.napcat_tool_names:
-            if tool_name not in records_by_name:
+        known_names = set(self.napcat_tool_names)
+        for tool_name in dict.fromkeys(tool_names):
+            if tool_name not in known_names:
                 continue
             tool = tool_mgr.get_func(tool_name)
             if tool is None:
@@ -87,9 +98,61 @@ class NapCatFunctionToolsPlugin(Star):
             request_tool.active = True
             req.func_tool.add_tool(request_tool)
             injected_count += 1
+        return injected_count
 
-        if injected_count:
-            logger.debug(f"本轮 LLM 请求动态注入 NapCat 工具：{injected_count} 个。")
+    def _build_search_tool(self, req: ProviderRequest):
+        async def search_handler(
+            event: AstrMessageEvent,
+            keyword: str,
+        ) -> str:
+            """按关键词搜索 NapCat 工具，并立即注入本轮请求。"""
+            records = await self.tool_registry_repo.search_tools(
+                keyword,
+                limit=self.SEARCH_RESULT_LIMIT,
+                enabled_only=True,
+            )
+            matched_names = [record.tool_name for record in records]
+            queue = await self.tool_registry_repo.add_discovered_tool_names(
+                matched_names,
+                max_size=self.DISCOVERED_TOOL_LIMIT,
+            )
+            injected_count = 0
+            if self.config.get("dynamic_injection_enabled", True) is not False:
+                injected_count = self._inject_tool_names_into_request(req, matched_names)
+            return json.dumps(
+                {
+                    "keyword": keyword,
+                    "matched_tools": [
+                        {
+                            "name": record.tool_name,
+                            "endpoint": record.endpoint,
+                            "capability": record.capability,
+                        }
+                        for record in records
+                    ],
+                    "injected_tools": matched_names,
+                    "injected_count": injected_count,
+                    "discovered_tool_count": len(queue),
+                    "max_discovered_tools": self.DISCOVERED_TOOL_LIMIT,
+                },
+                ensure_ascii=False,
+            )
+
+        return self.context.get_llm_tool_manager().spec_to_func(
+            name=self.SEARCH_TOOL_NAME,
+            func_args=[
+                {
+                    "name": "keyword",
+                    "type": "string",
+                    "description": "必填，搜索 NapCat 工具能力、工具名、API 名或参数名的关键词。",
+                }
+            ],
+            desc=(
+                "能力: 在 NapCat 工具库中按关键词模糊搜索工具，"
+                "将最相关的前 3 个工具加入持久化发现队列，并立即注入本轮请求。"
+            ),
+            handler=search_handler,
+        )
 
     def _deactivate_registered_napcat_tools(self):
         if self.context is None:

@@ -3,10 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, or_, select
 
 from .database import ToolDBManager
-from .tables import NapcatToolRecord
+from .tables import NapcatDiscoveredToolRecord, NapcatToolRecord
 
 
 @dataclass(frozen=True)
@@ -119,6 +119,80 @@ class ToolRegistryRepo:
             record.updated_at = datetime.now()
             return True
 
+    async def search_tools(
+        self,
+        keyword: str,
+        *,
+        limit: int = 3,
+        enabled_only: bool = True,
+    ) -> list[NapcatToolRecord]:
+        normalized = keyword.strip().lower()
+        if not normalized:
+            return []
+
+        pattern = f"%{normalized}%"
+        stmt = select(NapcatToolRecord).where(
+            or_(
+                func.lower(NapcatToolRecord.tool_name).like(pattern),
+                func.lower(NapcatToolRecord.endpoint).like(pattern),
+                func.lower(NapcatToolRecord.capability).like(pattern),
+                func.lower(NapcatToolRecord.parameters_json).like(pattern),
+            )
+        )
+        if enabled_only:
+            stmt = stmt.where(NapcatToolRecord.enabled.is_(True))
+
+        async with self.db.get_session() as session:
+            result = await session.execute(stmt)
+            records = list(result.scalars().all())
+
+        return sorted(
+            records,
+            key=lambda record: (
+                -self._search_score(record, normalized),
+                record.tool_name,
+            ),
+        )[: max(0, limit)]
+
+    async def list_discovered_tool_names(self) -> list[str]:
+        async with self.db.get_session() as session:
+            result = await session.execute(
+                select(NapcatDiscoveredToolRecord).order_by(
+                    NapcatDiscoveredToolRecord.position.asc()
+                )
+            )
+            return [record.tool_name for record in result.scalars().all()]
+
+    async def add_discovered_tool_names(
+        self,
+        tool_names: list[str],
+        *,
+        max_size: int = 20,
+    ) -> list[str]:
+        existing = await self.list_discovered_tool_names()
+        queue = list(existing)
+        for tool_name in tool_names:
+            if tool_name in queue:
+                queue.remove(tool_name)
+            queue.append(tool_name)
+        if max_size > 0 and len(queue) > max_size:
+            queue = queue[-max_size:]
+        await self.replace_discovered_tool_names(queue)
+        return queue
+
+    async def replace_discovered_tool_names(self, tool_names: list[str]) -> int:
+        async with self.db.get_session() as session:
+            await session.execute(delete(NapcatDiscoveredToolRecord))
+            for index, tool_name in enumerate(dict.fromkeys(tool_names)):
+                session.add(
+                    NapcatDiscoveredToolRecord(
+                        tool_name=tool_name,
+                        position=index,
+                        updated_at=datetime.now(),
+                    )
+                )
+            return len(tool_names)
+
     def _to_record(self, tool: ToolRegistryData) -> NapcatToolRecord:
         return NapcatToolRecord(
             tool_name=tool.tool_name,
@@ -131,3 +205,23 @@ class ToolRegistryRepo:
             enabled=tool.enabled,
             updated_at=datetime.now(),
         )
+
+    def _search_score(self, record: NapcatToolRecord, keyword: str) -> int:
+        score = 0
+        tool_name = record.tool_name.lower()
+        endpoint = record.endpoint.lower()
+        capability = record.capability.lower()
+        params = record.parameters_json.lower()
+        if tool_name == keyword or endpoint == keyword:
+            score += 100
+        if tool_name.startswith(keyword) or endpoint.startswith(keyword):
+            score += 50
+        if keyword in tool_name:
+            score += 30
+        if keyword in endpoint:
+            score += 25
+        if keyword in capability:
+            score += 20
+        if keyword in params:
+            score += 5
+        return score

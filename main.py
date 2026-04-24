@@ -3,6 +3,7 @@
 import copy
 import json
 import os
+import platform
 import time
 
 from astrbot.api import logger
@@ -22,7 +23,7 @@ from napcat_fc.tool_registry import build_tool_registry_data
     "astrbot_plugin_napcat_fc",
     "Soulter / AstrBot contributors",
     "将 NapCat / OneBot / go-cqhttp API 注册为 AstrBot 函数工具。",
-    "1.12.0",
+    "1.13.0",
 )
 class NapCatFunctionToolsPlugin(Star):
     SEARCH_TOOL_NAME = "napcat_search_tools"
@@ -43,6 +44,12 @@ class NapCatFunctionToolsPlugin(Star):
         self.napcat_tool_names = tuple(
             record.tool_name for record in self.tool_registry_records
         )
+        self.platform_specific_tool_names = {
+            "windows": set(self.WINDOWS_TOOL_NAMES),
+            "linux": set(self.LINUX_TOOL_NAMES),
+            "mac": set(self.MAC_TOOL_NAMES),
+        }
+        self.current_platform_name = self._detect_current_platform()
         self.storage_dir = str(StarTools.get_data_dir())
         os.makedirs(self.storage_dir, exist_ok=True)
         self.db_path = os.path.join(self.storage_dir, "napcat_fc_tools.db")
@@ -121,6 +128,13 @@ class NapCatFunctionToolsPlugin(Star):
         for tool_name in dict.fromkeys(tool_names):
             if tool_name not in known_names:
                 continue
+            if not self._is_tool_available_on_current_platform(tool_name):
+                self._debug_log(
+                    "inject_tools:skip_platform_mismatch",
+                    tool_name=tool_name,
+                    current_platform=self.current_platform_name,
+                )
+                continue
             tool = tool_mgr.get_func(tool_name)
             if tool is None:
                 continue
@@ -155,6 +169,11 @@ class NapCatFunctionToolsPlugin(Star):
                 limit=self.SEARCH_RESULT_LIMIT,
                 enabled_only=True,
             )
+            records = [
+                record
+                for record in records
+                if self._is_tool_available_on_current_platform(record.tool_name)
+            ]
             matched_names = [record.tool_name for record in records]
             self._debug_log(
                 "search_tool:matched",
@@ -262,6 +281,22 @@ class NapCatFunctionToolsPlugin(Star):
 
     def _is_aiocqhttp_event(self, event: AstrMessageEvent) -> bool:
         return isinstance(event, AiocqhttpMessageEvent)
+
+    def _is_tool_available_on_current_platform(self, tool_name: str) -> bool:
+        for platform_name, tool_names in self.platform_specific_tool_names.items():
+            if tool_name in tool_names:
+                return platform_name == self.current_platform_name
+        return True
+
+    def _detect_current_platform(self) -> str:
+        system = platform.system().strip().lower()
+        if system.startswith("win"):
+            return "windows"
+        if system == "darwin":
+            return "mac"
+        if system.startswith("linux"):
+            return "linux"
+        return system or "unknown"
 
     async def _call_napcat_api(
         self,

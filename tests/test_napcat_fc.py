@@ -313,6 +313,17 @@ def test_debug_log_is_gated_by_config(monkeypatch):
     assert '"value": 1' in captured[0]
 
 
+def test_platform_specific_tools_only_available_on_matching_system():
+    plugin = NapCatFunctionToolsPlugin(context=FakeContext([]))
+
+    plugin.current_platform_name = "linux"
+    assert plugin._is_tool_available_on_current_platform("napcat_dot_ocr_image") is False
+    assert plugin._is_tool_available_on_current_platform("napcat_get_login_info") is True
+
+    plugin.current_platform_name = "windows"
+    assert plugin._is_tool_available_on_current_platform("napcat_dot_ocr_image") is True
+
+
 @pytest.mark.asyncio
 async def test_on_llm_request_injects_discovered_tools_as_request_scope_copies():
     source_tool = make_function_tool("napcat_send_group_msg", active=False)
@@ -411,6 +422,45 @@ async def test_search_tool_discovers_persists_and_immediately_injects_tools():
         assert payload["injected_count"] >= 1
         assert req.func_tool.get_tool("napcat_send_group_msg") is not None
         assert len(await plugin.tool_registry_repo.list_discovered_tool_names()) <= 20
+    finally:
+        await plugin.tool_db.close()
+        for suffix in ("", "-wal", "-shm"):
+            path = Path(str(db_path) + suffix)
+            if path.exists():
+                path.unlink()
+
+
+@pytest.mark.asyncio
+async def test_search_tool_filters_platform_specific_results_before_persisting():
+    ocr_tool = make_function_tool("napcat_dot_ocr_image", active=False)
+    plugin = NapCatFunctionToolsPlugin(context=FakeContext([ocr_tool]))
+    plugin.current_platform_name = "linux"
+    db_path = (
+        Path(__file__).resolve().parents[1]
+        / f".test-platform-search-tools-{uuid.uuid4().hex}.db"
+    )
+    plugin.tool_db = ToolDBManager(str(db_path))
+    plugin.tool_registry_repo = ToolRegistryRepo(plugin.tool_db)
+    await plugin.tool_db.init_db()
+    try:
+        records = [
+            record
+            for record in build_tool_registry_data(NapCatFunctionToolsPlugin)
+            if record.tool_name == "napcat_dot_ocr_image"
+        ]
+        await plugin.tool_registry_repo.replace_all_tools(records)
+        req = ProviderRequest()
+        req.func_tool = ToolSet()
+        await plugin.inject_napcat_tools_on_llm_request(make_aiocqhttp_event(), req)
+
+        search_tool = req.func_tool.get_tool(plugin.SEARCH_TOOL_NAME)
+        assert search_tool is not None
+        result = await search_tool.handler(make_aiocqhttp_event(), keyword="ocr")
+        payload = json.loads(result)
+
+        assert payload["matched_tools"] == []
+        assert await plugin.tool_registry_repo.list_discovered_tool_names() == []
+        assert req.func_tool.get_tool("napcat_dot_ocr_image") is None
     finally:
         await plugin.tool_db.close()
         for suffix in ("", "-wal", "-shm"):

@@ -29,6 +29,8 @@
 
 所有 NapCat 相关请求级工具只会在 `AiocqhttpMessageEvent` 事件中处理。非 aiocqhttp/NapCat 消息事件会卸载本轮请求里已有的 NapCat 工具，并跳过搜索工具和具体 NapCat 工具注入。
 
+系统专属工具会在搜索和注入阶段按当前运行系统过滤。例如 Windows 专属 OCR 工具只会在 Windows 运行环境中进入搜索发现队列并被注入。
+
 ## 使用方式
 
 LLM 调用具体接口时使用对应工具，例如 `napcat_send_group_msg`：

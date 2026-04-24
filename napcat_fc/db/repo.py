@@ -206,6 +206,9 @@ class ToolRegistryRepo:
             updated_at=datetime.now(),
         )
 
+    def search_score(self, record: NapcatToolRecord, keyword: str) -> int:
+        return self._search_score(record, keyword.strip().lower())
+
     def _search_score(self, record: NapcatToolRecord, keyword: str) -> int:
         score = 0
         tool_name = record.tool_name.lower()

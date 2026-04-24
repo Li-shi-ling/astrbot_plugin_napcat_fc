@@ -1,9 +1,11 @@
 ﻿from __future__ import annotations
 
+import asyncio
 import copy
 import json
 import os
 import platform
+import re
 import sys
 import time
 from pathlib import Path
@@ -29,11 +31,12 @@ from napcat_fc.tool_registry import build_tool_registry_data
     "astrbot_plugin_napcat_fc",
     "Soulter / AstrBot contributors",
     "将 NapCat / OneBot / go-cqhttp API 注册为 AstrBot 函数工具。",
-    "1.14.5",
+    "1.14.6",
 )
 class NapCatFunctionToolsPlugin(Star):
     SEARCH_TOOL_NAME = "napcat_search_tools"
     SEARCH_RESULT_LIMIT = 3
+    SEARCH_CANDIDATE_LIMIT = 10
     DISCOVERED_TOOL_LIMIT = 20
     INFORMATION_ACTION_PREFIXES = (
         "get_",
@@ -194,20 +197,34 @@ class NapCatFunctionToolsPlugin(Star):
                 keyword=keyword,
                 event_type=type(event).__name__,
             )
-            records = await self.tool_registry_repo.search_tools(
-                keyword,
-                limit=self.SEARCH_RESULT_LIMIT,
-                enabled_only=True,
-            )
-            records = [
+            search_terms = self._build_search_terms(keyword)
+            candidate_records = await self._search_tool_candidates(keyword, search_terms)
+            platform_records = [
                 record
-                for record in records
+                for record in candidate_records
                 if self._is_tool_available_on_current_platform(record.tool_name)
             ]
+            discovered_names = set(
+                await self.tool_registry_repo.list_discovered_tool_names()
+            )
+            skipped_discovered_names = [
+                record.tool_name
+                for record in platform_records
+                if record.tool_name in discovered_names
+            ]
+            records = [
+                record
+                for record in platform_records
+                if record.tool_name not in discovered_names
+            ][: self.SEARCH_RESULT_LIMIT]
             matched_names = [record.tool_name for record in records]
             self._debug_log(
                 "search_tool:matched",
                 keyword=keyword,
+                search_terms=search_terms,
+                candidate_count=len(candidate_records),
+                platform_candidate_count=len(platform_records),
+                skipped_discovered_count=len(skipped_discovered_names),
                 matched_count=len(matched_names),
                 matched_tools=matched_names,
             )
@@ -228,6 +245,8 @@ class NapCatFunctionToolsPlugin(Star):
             return json.dumps(
                 {
                     "keyword": keyword,
+                    "search_terms": search_terms,
+                    "candidate_limit": self.SEARCH_CANDIDATE_LIMIT,
                     "matched_tools": [
                         {
                             "name": record.tool_name,
@@ -240,6 +259,7 @@ class NapCatFunctionToolsPlugin(Star):
                     "injected_count": injected_count,
                     "discovered_tool_count": len(queue),
                     "max_discovered_tools": self.DISCOVERED_TOOL_LIMIT,
+                    "skipped_discovered_tools": sorted(skipped_discovered_names),
                 },
                 ensure_ascii=False,
             )
@@ -250,12 +270,17 @@ class NapCatFunctionToolsPlugin(Star):
                 {
                     "name": "keyword",
                     "type": "string",
-                    "description": "必填，搜索 NapCat 工具能力、工具名、API 名或参数名的关键词。",
+                    "description": (
+                        "必填，搜索 NapCat 工具能力、工具名、API 名或参数名的关键词。"
+                        "多个词用空格隔开时会并发分词搜索，并按综合相关度排序。"
+                    ),
                 }
             ],
             desc=(
                 "能力: 在 NapCat/OneBot/go-cqhttp 工具库中按关键词模糊搜索工具，"
-                "将最相关的前 3 个工具加入持久化发现队列，并立即注入本轮请求。"
+                "支持空格分词并发查询，会先取综合相关度最高的 10 个候选，"
+                "再排除已经发现过的工具，将剩余最相关的前 3 个工具加入持久化发现队列，"
+                "并立即注入本轮请求。"
                 "可搜索的能力大类包括: 消息发送与撤回、群消息和私聊消息、"
                 "合并转发和历史消息、群成员和群管理、好友和请求处理、"
                 "群文件和文件下载、图片/语音/OCR、表情和收藏、账号状态、"
@@ -265,6 +290,63 @@ class NapCatFunctionToolsPlugin(Star):
             ),
             handler=search_handler,
         )
+
+    def _build_search_terms(self, keyword: str) -> list[str]:
+        normalized = keyword.strip().lower()
+        if not normalized:
+            return []
+
+        terms: list[str] = []
+        for term in re.split(r"\s+", normalized):
+            if not term:
+                continue
+            terms.append(term)
+            if "_" in term:
+                terms.extend(part for part in term.split("_") if len(part) >= 2)
+        return list(dict.fromkeys(terms))
+
+    async def _search_tool_candidates(self, keyword: str, terms: list[str]):
+        if not terms:
+            return []
+
+        search_tasks = [
+            self.tool_registry_repo.search_tools(
+                term,
+                limit=self.SEARCH_CANDIDATE_LIMIT,
+                enabled_only=True,
+            )
+            for term in terms
+        ]
+        search_results = await asyncio.gather(*search_tasks)
+        by_name = {}
+        for records in search_results:
+            for record in records:
+                by_name[record.tool_name] = record
+
+        return sorted(
+            by_name.values(),
+            key=lambda record: (
+                -self._combined_search_score(record, keyword, terms),
+                record.tool_name,
+            ),
+        )[: self.SEARCH_CANDIDATE_LIMIT]
+
+    def _combined_search_score(self, record, keyword: str, terms: list[str]) -> int:
+        full_keyword = keyword.strip().lower()
+        score = 0
+        if full_keyword:
+            score += self.tool_registry_repo.search_score(record, full_keyword)
+        matched_terms = 0
+        for term in terms:
+            term_score = self.tool_registry_repo.search_score(record, term)
+            if term_score:
+                matched_terms += 1
+            score += term_score
+        if matched_terms:
+            score += matched_terms * 10
+        if terms and matched_terms == len(terms):
+            score += 40
+        return score
 
     def _deactivate_registered_napcat_tools(self):
         if self.context is None:

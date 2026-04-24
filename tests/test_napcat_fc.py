@@ -6,6 +6,7 @@ import subprocess
 import sys
 import uuid
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -568,6 +569,23 @@ def test_platform_specific_tools_only_available_on_matching_system():
 
     plugin.current_platform_name = "windows"
     assert plugin._is_tool_available_on_current_platform("napcat_dot_ocr_image") is True
+
+
+def test_search_scoring_supports_legacy_repo_without_public_score_method():
+    class LegacyRepo:
+        def _search_score(self, record, keyword):
+            return 20 if keyword in record.capability.lower() else 0
+
+    plugin = NapCatFunctionToolsPlugin(context=FakeContext([]))
+    plugin.tool_registry_repo = LegacyRepo()
+    record = SimpleNamespace(
+        tool_name="napcat_get_group_info",
+        endpoint="get_group_info",
+        capability="获取群信息",
+        parameters_json="[]",
+    )
+
+    assert plugin._combined_search_score(record, "群 信息", ["群", "信息"]) > 0
 
 
 @pytest.mark.asyncio

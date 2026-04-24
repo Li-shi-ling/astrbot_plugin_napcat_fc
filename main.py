@@ -1,24 +1,56 @@
-from astrbot.api.event import filter, AstrMessageEvent, MessageEventResult
-from astrbot.api.star import Context, Star, register
-from astrbot.api import logger
+from __future__ import annotations
 
-@register("helloworld", "YourName", "一个简单的 Hello World 插件", "1.0.0")
-class MyPlugin(Star):
-    def __init__(self, context: Context):
+from pathlib import Path
+from typing import Any
+
+from astrbot.api import logger
+from astrbot.api.star import Context, Star, register
+
+from napcat_fc.client import NapCatClient
+from napcat_fc.registry import build_endpoint_tools, discover_all_endpoint_specs
+from napcat_fc.tools import build_generic_call_tool
+
+
+@register(
+    "astrbot_plugin_napcat_fc",
+    "Soulter / AstrBot contributors",
+    "将 NapCat / OneBot HTTP API 暴露为 AstrBot LLM 函数工具。",
+    "1.4.0",
+)
+class NapCatFunctionToolsPlugin(Star):
+    def __init__(self, context: Context, config: dict[str, Any] | None = None):
         super().__init__(context)
+        self.config = dict(config or {})
+        self.plugin_dir = Path(__file__).resolve().parent
+        self.client = NapCatClient.from_config(self.config)
+
+        specs = discover_all_endpoint_specs(self.plugin_dir)
+        tools = build_endpoint_tools(
+            specs=specs,
+            client=self.client,
+            tool_prefix=str(self.config.get("tool_prefix") or "napcat"),
+        )
+
+        if self.config.get("enable_generic_tool", True):
+            tools.append(
+                build_generic_call_tool(
+                    client=self.client,
+                    tool_name=f"{self.config.get('tool_prefix') or 'napcat'}_call_api",
+                )
+            )
+
+        if self.config.get("register_tools", True):
+            self.context.add_llm_tools(*tools)
+            for tool in tools:
+                tool.handler_module_path = __name__
+            logger.info(f"NapCat 函数工具已注册：{len(tools)} 个。")
+        else:
+            logger.info("NapCat 函数工具注册已被配置关闭。")
+
+        self.tools = tools
 
     async def initialize(self):
-        """可选择实现异步的插件初始化方法，当实例化该插件类之后会自动调用该方法。"""
-
-    # 注册指令的装饰器。指令名为 helloworld。注册成功后，发送 `/helloworld` 就会触发这个指令，并回复 `你好, {user_name}!`
-    @filter.command("helloworld")
-    async def helloworld(self, event: AstrMessageEvent):
-        """这是一个 hello world 指令""" # 这是 handler 的描述，将会被解析方便用户了解插件内容。建议填写。
-        user_name = event.get_sender_name()
-        message_str = event.message_str # 用户发的纯文本消息字符串
-        message_chain = event.get_messages() # 用户所发的消息的消息链 # from astrbot.api.message_components import *
-        logger.info(message_chain)
-        yield event.plain_result(f"Hello, {user_name}, 你发了 {message_str}!") # 发送一条纯文本消息
+        logger.info("NapCat 函数工具插件初始化完成。")
 
     async def terminate(self):
-        """可选择实现异步的插件销毁方法，当插件被卸载/停用时会调用。"""
+        await self.client.close()

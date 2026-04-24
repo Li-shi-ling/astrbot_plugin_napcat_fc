@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 import astrbot.api  # noqa: F401
-from astrbot.core.platform.astrbot_message import AstrBotMessage
+from astrbot.core.platform.astrbot_message import AstrBotMessage, MessageMember
 from astrbot.core.platform.message_type import MessageType
 from astrbot.core.platform.platform_metadata import PlatformMetadata
 from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import (
@@ -69,15 +69,21 @@ class FakeContext:
         return self.tool_manager
 
 
-def make_aiocqhttp_event():
+def make_aiocqhttp_event(
+    *,
+    group_id: str | None = None,
+    user_id: str = "123456",
+    message_id: str = "1",
+):
     message = AstrBotMessage()
-    message.type = MessageType.FRIEND_MESSAGE
+    message.type = MessageType.GROUP_MESSAGE if group_id else MessageType.FRIEND_MESSAGE
     message.message = []
     message.message_str = ""
-    message.sender = None
+    message.sender = MessageMember(user_id=user_id, nickname="tester")
     message.self_id = "10000"
-    message.message_id = "1"
-    message.session_id = "123456"
+    message.message_id = message_id
+    message.group_id = group_id
+    message.session_id = group_id or user_id
     message.raw_message = None
     return AiocqhttpMessageEvent(
         message_str="",
@@ -87,7 +93,7 @@ def make_aiocqhttp_event():
             description="aiocqhttp",
             id="aiocqhttp",
         ),
-        session_id="123456",
+        session_id=group_id or user_id,
         bot=FakeBot(),
     )
 
@@ -148,6 +154,59 @@ async def test_endpoint_tool_calls_expected_endpoint():
         (
             "send_group_msg",
             {"group_id": 123, "message": "hello", "auto_escape": False},
+        )
+    ]
+
+
+def test_context_defaults_fill_values_from_aiocqhttp_event():
+    event = make_aiocqhttp_event(group_id="654321", user_id="123456", message_id="789")
+    plugin = NapCatFunctionToolsPlugin(context=None)
+    payload = {
+        "group_id": None,
+        "user_id": None,
+        "self_id": None,
+        "message_id": None,
+    }
+
+    assert plugin._fill_context_defaults(event, payload) is None
+
+    assert payload == {
+        "group_id": 654321,
+        "user_id": 123456,
+        "self_id": 10000,
+        "message_id": 789,
+    }
+
+
+@pytest.mark.asyncio
+async def test_group_context_default_returns_friendly_message_in_private_chat():
+    event = make_aiocqhttp_event(user_id="123456")
+    plugin = NapCatFunctionToolsPlugin(context=None)
+
+    result = await plugin._call_napcat_api(
+        event,
+        "send_group_msg",
+        {"group_id": None, "message": "hello"},
+    )
+    payload = json.loads(result)
+
+    assert payload["status"] == "missing_context"
+    assert "当前消息不是群聊事件" in payload["message"]
+    assert "group_id" in payload["message"]
+    assert event.bot.api.calls == []
+
+
+@pytest.mark.asyncio
+async def test_group_tool_uses_current_group_when_group_id_is_omitted():
+    event = make_aiocqhttp_event(group_id="654321", user_id="123456")
+    plugin = NapCatFunctionToolsPlugin(context=None)
+
+    await plugin.napcat_send_group_msg_tool(event, message="hello")
+
+    assert event.bot.api.calls == [
+        (
+            "send_group_msg",
+            {"group_id": 654321, "message": "hello"},
         )
     ]
 
@@ -228,9 +287,11 @@ def test_build_tool_registry_data_extracts_tool_discovery_metadata():
     params = json.loads(by_name["napcat_send_group_msg"].parameters_json)
     param_names = {param["name"] for param in params}
     assert {"group_id", "message", "auto_escape"}.issubset(param_names)
-    assert {"group_id", "message"}.issubset(
-        json.loads(by_name["napcat_send_group_msg"].required_parameters_json)
-    )
+    group_id_param = next(param for param in params if param["name"] == "group_id")
+    assert "默认使用当前群聊" in group_id_param["description"]
+    assert json.loads(by_name["napcat_send_group_msg"].required_parameters_json) == [
+        "message"
+    ]
     assert json.loads(by_name["napcat_dot_ocr_image"].platforms_json) == ["windows"]
     assert json.loads(by_name["napcat_get_login_info"].platforms_json) == []
 

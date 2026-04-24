@@ -23,7 +23,7 @@ from napcat_fc.tool_registry import build_tool_registry_data
     "astrbot_plugin_napcat_fc",
     "Soulter / AstrBot contributors",
     "将 NapCat / OneBot / go-cqhttp API 注册为 AstrBot 函数工具。",
-    "1.13.0",
+    "1.14.0",
 )
 class NapCatFunctionToolsPlugin(Star):
     SEARCH_TOOL_NAME = "napcat_search_tools"
@@ -313,6 +313,17 @@ class NapCatFunctionToolsPlugin(Star):
         action = endpoint.strip().lstrip("/")
         if not action:
             raise ValueError("endpoint must not be empty.")
+        payload = dict(payload)
+        missing_context = self._fill_context_defaults(event, payload)
+        if missing_context:
+            return json.dumps(
+                {
+                    "status": "missing_context",
+                    "message": missing_context,
+                    "endpoint": action,
+                },
+                ensure_ascii=False,
+            )
         bot = event.bot
         api = getattr(bot, "api", None)
         call_action = getattr(api, "call_action", None) or getattr(bot, "call_action", None)
@@ -321,22 +332,54 @@ class NapCatFunctionToolsPlugin(Star):
         result = await call_action(action, **payload)
         return json.dumps(result, ensure_ascii=False, default=str)
 
+    def _fill_context_defaults(
+        self,
+        event: AiocqhttpMessageEvent,
+        payload: dict,
+    ) -> str | None:
+        if payload.get("group_id", None) is None and "group_id" in payload:
+            group_id = event.get_group_id()
+            if not group_id:
+                return "当前消息不是群聊事件，无法自动获取 group_id。请让用户提供群号，或改用私聊相关工具。"
+            payload["group_id"] = int(group_id) if str(group_id).isdigit() else group_id
+
+        if payload.get("user_id", None) is None and "user_id" in payload:
+            user_id = event.get_sender_id()
+            if not user_id:
+                return "当前消息无法自动获取 user_id。请让用户提供 QQ 号或目标用户 ID。"
+            payload["user_id"] = int(user_id) if str(user_id).isdigit() else user_id
+
+        if payload.get("self_id", None) is None and "self_id" in payload:
+            self_id = event.get_self_id()
+            if not self_id:
+                return "当前消息无法自动获取 self_id。请明确提供机器人账号 ID。"
+            payload["self_id"] = int(self_id) if str(self_id).isdigit() else self_id
+
+        if payload.get("message_id", None) is None and "message_id" in payload:
+            message_id = getattr(event.message_obj, "message_id", "")
+            if not message_id:
+                return "当前消息无法自动获取 message_id。请明确提供消息 ID。"
+            payload["message_id"] = (
+                int(message_id) if str(message_id).isdigit() else message_id
+            )
+
+        return None
+
     @filter.llm_tool(name='napcat_arksharegroup')
     async def napcat_arksharegroup_tool(
         self,
         event: AstrMessageEvent,
-        group_id: int
+        group_id: int = None,
     ):
         """能力: 获取群分享的 Ark 内容 (API: /ArkShareGroup).
 
 Args:
-    group_id(int): 必填，群号。
+    group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
 
 Returns:
     str: 返回 API 响应的 JSON 字符串。"""
         payload: dict = {}
-        if group_id is not None:
-            payload['group_id'] = group_id
+        payload['group_id'] = group_id
         return await self._call_napcat_api(event, 'ArkShareGroup', payload)
 
     @filter.llm_tool(name='napcat_arksharepeer')
@@ -345,8 +388,8 @@ Returns:
         event: AstrMessageEvent,
         phone_number: str,
         group_id: int = None,
+        user_id: int = None,
         phoneNumber: str = None,
-        user_id: int = None
     ):
         """能力: 获取用户推荐的 Ark 内容 (API: /ArkSharePeer).
 
@@ -372,7 +415,7 @@ Returns:
     @filter.llm_tool(name='napcat_bot_exit')
     async def napcat_bot_exit_tool(
         self,
-        event: AstrMessageEvent
+        event: AstrMessageEvent,
     ):
         """能力: 账号退出 (API: /bot_exit).
 
@@ -387,7 +430,7 @@ Returns:
     @filter.llm_tool(name='napcat_can_send_image')
     async def napcat_can_send_image_tool(
         self,
-        event: AstrMessageEvent
+        event: AstrMessageEvent,
     ):
         """能力: 检查是否可以发送图片 (API: /can_send_image).
 
@@ -402,7 +445,7 @@ Returns:
     @filter.llm_tool(name='napcat_can_send_record')
     async def napcat_can_send_record_tool(
         self,
-        event: AstrMessageEvent
+        event: AstrMessageEvent,
     ):
         """能力: 检查是否可以发送语音 (API: /can_send_record).
 
@@ -418,22 +461,21 @@ Returns:
     async def napcat_cancel_group_todo_tool(
         self,
         event: AstrMessageEvent,
-        group_id: int,
+        group_id: int = None,
         message_id: int = None,
-        message_seq: int = None
+        message_seq: int = None,
     ):
         """能力: 将指定消息对应的群待办取消 (API: /cancel_group_todo).
 
 Args:
-    group_id(int): 必填，群号。
+    group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
     message_id(int): 可选，消息ID。
     message_seq(int): 可选，消息Seq (可选)。
 
 Returns:
     str: 返回 API 响应的 JSON 字符串。"""
         payload: dict = {}
-        if group_id is not None:
-            payload['group_id'] = group_id
+        payload['group_id'] = group_id
         if message_id is not None:
             payload['message_id'] = message_id
         if message_seq is not None:
@@ -445,28 +487,27 @@ Returns:
         self,
         event: AstrMessageEvent,
         msg_id: str,
-        user_id: int
+        user_id: int = None,
     ):
         """能力: 取消在线文件 (API: /cancel_online_file).
 
 Args:
     msg_id(str): 必填，消息 ID。
-    user_id(int): 必填，用户 QQ。
+    user_id(int): 可选，用户 QQ。默认使用当前消息发送者的用户 ID。
 
 Returns:
     str: 返回 API 响应的 JSON 字符串。"""
         payload: dict = {}
         if msg_id is not None:
             payload['msg_id'] = msg_id
-        if user_id is not None:
-            payload['user_id'] = user_id
+        payload['user_id'] = user_id
         return await self._call_napcat_api(event, 'cancel_online_file', payload)
 
     @filter.llm_tool(name='napcat_check_url_safely')
     async def napcat_check_url_safely_tool(
         self,
         event: AstrMessageEvent,
-        url: str
+        url: str,
     ):
         """能力: 检查指定URL的安全等级 (API: /check_url_safely).
 
@@ -483,7 +524,7 @@ Returns:
     @filter.llm_tool(name='napcat_clean_cache')
     async def napcat_clean_cache_tool(
         self,
-        event: AstrMessageEvent
+        event: AstrMessageEvent,
     ):
         """能力: 清理缓存 (API: /clean_cache).
 
@@ -498,7 +539,7 @@ Returns:
     @filter.llm_tool(name='napcat_clean_stream_temp_file')
     async def napcat_clean_stream_temp_file_tool(
         self,
-        event: AstrMessageEvent
+        event: AstrMessageEvent,
     ):
         """能力: 清理流临时文件 (API: /clean_stream_temp_file).
 
@@ -517,8 +558,8 @@ Returns:
         bot_appid: str,
         button_id: str,
         callback_data: str,
-        group_id: int,
-        msg_seq: int
+        msg_seq: int,
+        group_id: int = None,
     ):
         """能力: 点击内联键盘按钮 (API: /click_inline_keyboard_button).
 
@@ -526,7 +567,7 @@ Args:
     bot_appid(str): 必填，机器人AppID。
     button_id(str): 必填，按钮ID。
     callback_data(str): 必填，回调数据。
-    group_id(int): 必填，群号。
+    group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
     msg_seq(int): 必填，消息序列号。
 
 Returns:
@@ -538,8 +579,7 @@ Returns:
             payload['button_id'] = button_id
         if callback_data is not None:
             payload['callback_data'] = callback_data
-        if group_id is not None:
-            payload['group_id'] = group_id
+        payload['group_id'] = group_id
         if msg_seq is not None:
             payload['msg_seq'] = msg_seq
         return await self._call_napcat_api(event, 'click_inline_keyboard_button', payload)
@@ -548,22 +588,21 @@ Returns:
     async def napcat_complete_group_todo_tool(
         self,
         event: AstrMessageEvent,
-        group_id: int,
+        group_id: int = None,
         message_id: int = None,
-        message_seq: int = None
+        message_seq: int = None,
     ):
         """能力: 将指定消息对应的群待办标记为已完成 (API: /complete_group_todo).
 
 Args:
-    group_id(int): 必填，群号。
+    group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
     message_id(int): 可选，消息ID。
     message_seq(int): 可选，消息Seq (可选)。
 
 Returns:
     str: 返回 API 响应的 JSON 字符串。"""
         payload: dict = {}
-        if group_id is not None:
-            payload['group_id'] = group_id
+        payload['group_id'] = group_id
         if message_id is not None:
             payload['message_id'] = message_id
         if message_seq is not None:
@@ -575,7 +614,7 @@ Returns:
         self,
         event: AstrMessageEvent,
         brief: str,
-        rawData: str
+        rawData: str,
     ):
         """能力: 创建收藏 (API: /create_collection).
 
@@ -598,7 +637,7 @@ Returns:
         event: AstrMessageEvent,
         files: str,
         name: str = None,
-        thumb_path: str = None
+        thumb_path: str = None,
     ):
         """能力: 创建闪传任务 (API: /create_flash_task).
 
@@ -623,15 +662,15 @@ Returns:
         self,
         event: AstrMessageEvent,
         folder_name: str,
-        group_id: int,
+        group_id: int = None,
         name: str = None,
-        parent_id: str = None
+        parent_id: str = None,
     ):
         """能力: 创建群文件文件夹 (API: /create_group_file_folder).
 
 Args:
     folder_name(str): 必填，文件夹名称。
-    group_id(int): 必填，群号。
+    group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
     name(str): 可选，文件夹名称。
     parent_id(str): 可选，仅能为 `/`。
 
@@ -640,8 +679,7 @@ Returns:
         payload: dict = {}
         if folder_name is not None:
             payload['folder_name'] = folder_name
-        if group_id is not None:
-            payload['group_id'] = group_id
+        payload['group_id'] = group_id
         if name is not None:
             payload['name'] = name
         if parent_id is not None:
@@ -656,7 +694,7 @@ Returns:
         guild_id: str,
         name: str,
         independent: bool = None,
-        initial_users: list = None
+        initial_users: list = None,
     ):
         """能力: 创建频道角色 (API: /create_guild_role).
 
@@ -687,14 +725,14 @@ Returns:
         self,
         event: AstrMessageEvent,
         album_id: str,
-        group_id: int,
-        lloc: str
+        lloc: str,
+        group_id: int = None,
     ):
         """能力: 删除群相册媒体 (API: /del_group_album_media).
 
 Args:
     album_id(str): 必填，相册ID。
-    group_id(int): 必填，群号。
+    group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
     lloc(str): 必填，媒体ID (lloc)。
 
 Returns:
@@ -702,8 +740,7 @@ Returns:
         payload: dict = {}
         if album_id is not None:
             payload['album_id'] = album_id
-        if group_id is not None:
-            payload['group_id'] = group_id
+        payload['group_id'] = group_id
         if lloc is not None:
             payload['lloc'] = lloc
         return await self._call_napcat_api(event, 'del_group_album_media', payload)
@@ -712,20 +749,19 @@ Returns:
     async def napcat_del_group_notice_tool(
         self,
         event: AstrMessageEvent,
-        group_id: int,
-        notice_id: str
+        notice_id: str,
+        group_id: int = None,
     ):
         """能力: _删除群公告 (API: /_del_group_notice).
 
 Args:
-    group_id(int): 必填，群号。
+    group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
     notice_id(str): 必填，公告ID。
 
 Returns:
     str: 返回 API 响应的 JSON 字符串。"""
         payload: dict = {}
-        if group_id is not None:
-            payload['group_id'] = group_id
+        payload['group_id'] = group_id
         if notice_id is not None:
             payload['notice_id'] = notice_id
         return await self._call_napcat_api(event, '_del_group_notice', payload)
@@ -734,15 +770,15 @@ Returns:
     async def napcat_delete_essence_msg_tool(
         self,
         event: AstrMessageEvent,
-        message_id: int,
+        message_id: int = None,
         group_id: int = None,
         msg_random: str = None,
-        msg_seq: int = None
+        msg_seq: int = None,
     ):
         """能力: 删除群精华消息 (API: /delete_essence_msg).
 
 Args:
-    message_id(int): 必填，消息ID。
+    message_id(int): 可选，消息ID。默认使用当前消息 ID。
     group_id(int): 可选，群号。
     msg_random(str): 可选，消息随机数。
     msg_seq(int): 可选，消息序号。
@@ -750,8 +786,7 @@ Args:
 Returns:
     str: 返回 API 响应的 JSON 字符串。"""
         payload: dict = {}
-        if message_id is not None:
-            payload['message_id'] = message_id
+        payload['message_id'] = message_id
         if group_id is not None:
             payload['group_id'] = group_id
         if msg_random is not None:
@@ -766,15 +801,15 @@ Returns:
         event: AstrMessageEvent,
         temp_block: bool,
         temp_both_del: bool,
-        user_id: int,
-        friend_id: str = None
+        user_id: int = None,
+        friend_id: str = None,
     ):
         """能力: 从好友列表中删除指定用户 (API: /delete_friend).
 
 Args:
     temp_block(bool): 必填，是否加入黑名单。
     temp_both_del(bool): 必填，是否双向删除。
-    user_id(int): 必填，用户 QQ 号。
+    user_id(int): 可选，用户 QQ 号。默认使用当前消息发送者的用户 ID。
     friend_id(str): 可选，好友 QQ 号。
 
 Returns:
@@ -784,8 +819,7 @@ Returns:
             payload['temp_block'] = temp_block
         if temp_both_del is not None:
             payload['temp_both_del'] = temp_both_del
-        if user_id is not None:
-            payload['user_id'] = user_id
+        payload['user_id'] = user_id
         if friend_id is not None:
             payload['friend_id'] = friend_id
         return await self._call_napcat_api(event, 'delete_friend', payload)
@@ -795,14 +829,14 @@ Returns:
         self,
         event: AstrMessageEvent,
         file_id: str,
-        group_id: int,
-        busid: int = None
+        group_id: int = None,
+        busid: int = None,
     ):
         """能力: 在群文件系统中删除指定的文件 (API: /delete_group_file).
 
 Args:
     file_id(str): 必填，文件ID 参考 `File` 对象。
-    group_id(int): 必填，群号。
+    group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
     busid(int): 可选，文件类型 参考 `File` 对象。
 
 Returns:
@@ -810,8 +844,7 @@ Returns:
         payload: dict = {}
         if file_id is not None:
             payload['file_id'] = file_id
-        if group_id is not None:
-            payload['group_id'] = group_id
+        payload['group_id'] = group_id
         if busid is not None:
             payload['busid'] = busid
         return await self._call_napcat_api(event, 'delete_group_file', payload)
@@ -821,14 +854,14 @@ Returns:
         self,
         event: AstrMessageEvent,
         folder_id: str,
-        group_id: int,
-        folder: str = None
+        group_id: int = None,
+        folder: str = None,
     ):
         """能力: 删除群文件夹 (API: /delete_group_folder).
 
 Args:
     folder_id(str): 必填，文件夹ID。
-    group_id(int): 必填，群号。
+    group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
     folder(str): 可选，文件夹ID。
 
 Returns:
@@ -836,8 +869,7 @@ Returns:
         payload: dict = {}
         if folder_id is not None:
             payload['folder_id'] = folder_id
-        if group_id is not None:
-            payload['group_id'] = group_id
+        payload['group_id'] = group_id
         if folder is not None:
             payload['folder'] = folder
         return await self._call_napcat_api(event, 'delete_group_folder', payload)
@@ -847,7 +879,7 @@ Returns:
         self,
         event: AstrMessageEvent,
         guild_id: str = None,
-        role_id: str = None
+        role_id: str = None,
     ):
         """能力: 删除频道角色 (API: /delete_guild_role).
 
@@ -868,25 +900,24 @@ Returns:
     async def napcat_delete_msg_tool(
         self,
         event: AstrMessageEvent,
-        message_id: int
+        message_id: int = None,
     ):
         """能力: 撤回已发送的消息 (API: /delete_msg).
 
 Args:
-    message_id(int): 必填，消息 ID。
+    message_id(int): 可选，消息 ID。默认使用当前消息 ID。
 
 Returns:
     str: 返回 API 响应的 JSON 字符串。"""
         payload: dict = {}
-        if message_id is not None:
-            payload['message_id'] = message_id
+        payload['message_id'] = message_id
         return await self._call_napcat_api(event, 'delete_msg', payload)
 
     @filter.llm_tool(name='napcat_delete_unidirectional_friend')
     async def napcat_delete_unidirectional_friend_tool(
         self,
         event: AstrMessageEvent,
-        user_id: int = None
+        user_id: int = None,
     ):
         """能力: 删除单向好友 (API: /delete_unidirectional_friend).
 
@@ -906,15 +937,15 @@ Returns:
         event: AstrMessageEvent,
         album_id: str,
         content: str,
-        group_id: int,
-        lloc: str
+        lloc: str,
+        group_id: int = None,
     ):
         """能力: 发表群相册评论 (API: /do_group_album_comment).
 
 Args:
     album_id(str): 必填，相册 ID。
     content(str): 必填，评论内容。
-    group_id(int): 必填，群号。
+    group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
     lloc(str): 必填，图片 ID。
 
 Returns:
@@ -924,8 +955,7 @@ Returns:
             payload['album_id'] = album_id
         if content is not None:
             payload['content'] = content
-        if group_id is not None:
-            payload['group_id'] = group_id
+        payload['group_id'] = group_id
         if lloc is not None:
             payload['lloc'] = lloc
         return await self._call_napcat_api(event, 'do_group_album_comment', payload)
@@ -934,7 +964,7 @@ Returns:
     async def napcat_dot_get_word_slices_tool(
         self,
         event: AstrMessageEvent,
-        content: str = None
+        content: str = None,
     ):
         """能力: 获取中文分词 ( 隐藏 API ).
 
@@ -953,7 +983,7 @@ Returns:
         self,
         event: AstrMessageEvent,
         context: dict,
-        operation: dict
+        operation: dict,
     ):
         """能力: 相当于http的快速操作.
 
@@ -974,7 +1004,7 @@ Returns:
     async def napcat_dot_ocr_image_tool(
         self,
         event: AstrMessageEvent,
-        image: str
+        image: str,
     ):
         """能力: 仅 Windows 可用.
 
@@ -996,7 +1026,7 @@ Returns:
         headers: list = None,
         name: str = None,
         thread_count: int = None,
-        url: str = None
+        url: str = None,
     ):
         """能力: 下载网络文件到本地临时目录 (API: /download_file).
 
@@ -1028,7 +1058,7 @@ Returns:
         event: AstrMessageEvent,
         chunk_size: int = None,
         file: str = None,
-        file_id: str = None
+        file_id: str = None,
     ):
         """能力: 下载图片文件流 (API: /download_file_image_stream).
 
@@ -1055,7 +1085,7 @@ Returns:
         chunk_size: int = None,
         file: str = None,
         file_id: str = None,
-        out_format: str = None
+        out_format: str = None,
     ):
         """能力: 下载语音文件流 (API: /download_file_record_stream).
 
@@ -1084,7 +1114,7 @@ Returns:
         event: AstrMessageEvent,
         chunk_size: int = None,
         file: str = None,
-        file_id: str = None
+        file_id: str = None,
     ):
         """能力: 以流式方式从网络或本地下载文件 (API: /download_file_stream).
 
@@ -1108,7 +1138,7 @@ Returns:
     async def napcat_download_fileset_tool(
         self,
         event: AstrMessageEvent,
-        fileset_id: str
+        fileset_id: str,
     ):
         """能力: 下载文件集 (API: /download_fileset).
 
@@ -1126,7 +1156,7 @@ Returns:
     async def napcat_fetch_custom_face_tool(
         self,
         event: AstrMessageEvent,
-        count: int
+        count: int,
     ):
         """能力: 获取收藏表情 (API: /fetch_custom_face).
 
@@ -1148,7 +1178,7 @@ Returns:
         count: int,
         emojiId: str,
         emojiType: str,
-        message_id: int
+        message_id: int = None,
     ):
         """能力: 获取表情点赞详情 (API: /fetch_emoji_like).
 
@@ -1157,7 +1187,7 @@ Args:
     count(int): 必填，获取数量。
     emojiId(str): 必填，表情ID。
     emojiType(str): 必填，表情类型。
-    message_id(int): 必填，消息ID。
+    message_id(int): 可选，消息ID。默认使用当前消息 ID。
 
 Returns:
     str: 返回 API 响应的 JSON 字符串。"""
@@ -1170,32 +1200,29 @@ Returns:
             payload['emojiId'] = emojiId
         if emojiType is not None:
             payload['emojiType'] = emojiType
-        if message_id is not None:
-            payload['message_id'] = message_id
+        payload['message_id'] = message_id
         return await self._call_napcat_api(event, 'fetch_emoji_like', payload)
 
     @filter.llm_tool(name='napcat_forward_friend_single_msg')
     async def napcat_forward_friend_single_msg_tool(
         self,
         event: AstrMessageEvent,
-        message_id: int,
-        user_id: int,
-        group_id: int = None
+        message_id: int = None,
+        user_id: int = None,
+        group_id: int = None,
     ):
         """能力: 消息转发到私聊 (API: /forward_friend_single_msg).
 
 Args:
-    message_id(int): 必填，消息ID。
-    user_id(int): 必填，目标用户QQ。
+    message_id(int): 可选，消息ID。默认使用当前消息 ID。
+    user_id(int): 可选，目标用户QQ。默认使用当前消息发送者的用户 ID。
     group_id(int): 可选，目标群号。
 
 Returns:
     str: 返回 API 响应的 JSON 字符串。"""
         payload: dict = {}
-        if message_id is not None:
-            payload['message_id'] = message_id
-        if user_id is not None:
-            payload['user_id'] = user_id
+        payload['message_id'] = message_id
+        payload['user_id'] = user_id
         if group_id is not None:
             payload['group_id'] = group_id
         return await self._call_napcat_api(event, 'forward_friend_single_msg', payload)
@@ -1204,24 +1231,22 @@ Returns:
     async def napcat_forward_group_single_msg_tool(
         self,
         event: AstrMessageEvent,
-        group_id: int,
-        message_id: int,
-        user_id: int = None
+        group_id: int = None,
+        message_id: int = None,
+        user_id: int = None,
     ):
         """能力: 消息转发到群 (API: /forward_group_single_msg).
 
 Args:
-    group_id(int): 必填，目标群号。
-    message_id(int): 必填，消息ID。
+    group_id(int): 可选，目标群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
+    message_id(int): 可选，消息ID。默认使用当前消息 ID。
     user_id(int): 可选，目标用户QQ。
 
 Returns:
     str: 返回 API 响应的 JSON 字符串。"""
         payload: dict = {}
-        if group_id is not None:
-            payload['group_id'] = group_id
-        if message_id is not None:
-            payload['message_id'] = message_id
+        payload['group_id'] = group_id
+        payload['message_id'] = message_id
         if user_id is not None:
             payload['user_id'] = user_id
         return await self._call_napcat_api(event, 'forward_group_single_msg', payload)
@@ -1230,22 +1255,21 @@ Returns:
     async def napcat_friend_poke_tool(
         self,
         event: AstrMessageEvent,
-        user_id: int,
+        user_id: int = None,
         group_id: int = None,
-        target_id: int = None
+        target_id: int = None,
     ):
         """能力: 在群聊或私聊中发送戳一戳动作 (API: /friend_poke).
 
 Args:
-    user_id(int): 必填，用户QQ。
+    user_id(int): 可选，用户QQ。默认使用当前消息发送者的用户 ID。
     group_id(int): 可选，群号。
     target_id(int): 可选，目标QQ。
 
 Returns:
     str: 返回 API 响应的 JSON 字符串。"""
         payload: dict = {}
-        if user_id is not None:
-            payload['user_id'] = user_id
+        payload['user_id'] = user_id
         if group_id is not None:
             payload['group_id'] = group_id
         if target_id is not None:
@@ -1257,21 +1281,20 @@ Returns:
         self,
         event: AstrMessageEvent,
         chat_type: str,
-        group_id: int
+        group_id: int = None,
     ):
         """能力: 获取群聊中的AI角色列表 (API: /get_ai_characters).
 
 Args:
     chat_type(str): 必填，1 or 2?。
-    group_id(int): 必填，群号。
+    group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
 
 Returns:
     str: 返回 API 响应的 JSON 字符串。"""
         payload: dict = {}
         if chat_type is not None:
             payload['chat_type'] = chat_type
-        if group_id is not None:
-            payload['group_id'] = group_id
+        payload['group_id'] = group_id
         return await self._call_napcat_api(event, 'get_ai_characters', payload)
 
     @filter.llm_tool(name='napcat_get_ai_record')
@@ -1279,14 +1302,14 @@ Returns:
         self,
         event: AstrMessageEvent,
         character: str,
-        group_id: int,
-        text: str
+        text: str,
+        group_id: int = None,
     ):
         """能力: 通过 AI 语音引擎获取指定文本的语音 URL (API: /get_ai_record).
 
 Args:
     character(str): 必填，character_id。
-    group_id(int): 必填，群号。
+    group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
     text(str): 必填，语音文本内容。
 
 Returns:
@@ -1294,8 +1317,7 @@ Returns:
         payload: dict = {}
         if character is not None:
             payload['character'] = character
-        if group_id is not None:
-            payload['group_id'] = group_id
+        payload['group_id'] = group_id
         if text is not None:
             payload['text'] = text
         return await self._call_napcat_api(event, 'get_ai_record', payload)
@@ -1303,7 +1325,7 @@ Returns:
     @filter.llm_tool(name='napcat_get_clientkey')
     async def napcat_get_clientkey_tool(
         self,
-        event: AstrMessageEvent
+        event: AstrMessageEvent,
     ):
         """能力: 获取当前登录帐号的ClientKey (API: /get_clientkey).
 
@@ -1320,7 +1342,7 @@ Returns:
         self,
         event: AstrMessageEvent,
         category: str,
-        count: int
+        count: int,
     ):
         """能力: 获取收藏列表 (API: /get_collection_list).
 
@@ -1341,7 +1363,7 @@ Returns:
     async def napcat_get_cookies_tool(
         self,
         event: AstrMessageEvent,
-        domain: str
+        domain: str,
     ):
         """能力: 获取指定域名的 Cookies (API: /get_cookies).
 
@@ -1359,7 +1381,7 @@ Returns:
     async def napcat_get_credentials_tool(
         self,
         event: AstrMessageEvent,
-        domain: str
+        domain: str,
     ):
         """能力: 获取 QQ 相关接口凭证 (API: /get_credentials).
 
@@ -1376,7 +1398,7 @@ Returns:
     @filter.llm_tool(name='napcat_get_csrf_token')
     async def napcat_get_csrf_token_tool(
         self,
-        event: AstrMessageEvent
+        event: AstrMessageEvent,
     ):
         """能力: 获取 CSRF Token (API: /get_csrf_token).
 
@@ -1392,7 +1414,7 @@ Returns:
     async def napcat_get_doubt_friends_add_request_tool(
         self,
         event: AstrMessageEvent,
-        count: int
+        count: int,
     ):
         """能力: 获取系统的可疑好友申请列表 (API: /get_doubt_friends_add_request).
 
@@ -1412,16 +1434,16 @@ Returns:
         event: AstrMessageEvent,
         count: int,
         emoji_id: int,
-        message_id: int,
+        message_id: int = None,
+        group_id: int = None,
         emoji_type: int = None,
-        group_id: int = None
     ):
         """能力: 获取消息表情点赞列表 (API: /get_emoji_likes).
 
 Args:
     count(int): 必填，数量，0代表全部。
     emoji_id(int): 必填，表情ID。
-    message_id(int): 必填，消息ID，可以传递长ID或短ID。
+    message_id(int): 可选，消息ID，可以传递长ID或短ID。默认使用当前消息 ID。
     emoji_type(int): 可选，表情类型。
     group_id(int): 可选，群号，短ID可不传。
 
@@ -1432,8 +1454,7 @@ Returns:
             payload['count'] = count
         if emoji_id is not None:
             payload['emoji_id'] = emoji_id
-        if message_id is not None:
-            payload['message_id'] = message_id
+        payload['message_id'] = message_id
         if emoji_type is not None:
             payload['emoji_type'] = emoji_type
         if group_id is not None:
@@ -1444,18 +1465,17 @@ Returns:
     async def napcat_get_essence_msg_list_tool(
         self,
         event: AstrMessageEvent,
-        group_id: int
+        group_id: int = None,
     ):
         """能力: 获取指定群聊中的精华消息列表 (API: /get_essence_msg_list).
 
 Args:
-    group_id(int): 必填，群号。
+    group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
 
 Returns:
     str: 返回 API 响应的 JSON 字符串。"""
         payload: dict = {}
-        if group_id is not None:
-            payload['group_id'] = group_id
+        payload['group_id'] = group_id
         return await self._call_napcat_api(event, 'get_essence_msg_list', payload)
 
     @filter.llm_tool(name='napcat_get_file')
@@ -1463,7 +1483,7 @@ Returns:
         self,
         event: AstrMessageEvent,
         file: str = None,
-        file_id: str = None
+        file_id: str = None,
     ):
         """能力: 获取指定文件的详细信息及下载路径 (API: /get_file).
 
@@ -1484,7 +1504,7 @@ Returns:
     async def napcat_get_fileset_id_tool(
         self,
         event: AstrMessageEvent,
-        share_code: str
+        share_code: str,
     ):
         """能力: 获取文件集 ID (API: /get_fileset_id).
 
@@ -1502,7 +1522,7 @@ Returns:
     async def napcat_get_fileset_info_tool(
         self,
         event: AstrMessageEvent,
-        fileset_id: str
+        fileset_id: str,
     ):
         """能力: 获取文件集信息 (API: /get_fileset_info).
 
@@ -1520,7 +1540,7 @@ Returns:
     async def napcat_get_flash_file_list_tool(
         self,
         event: AstrMessageEvent,
-        fileset_id: str
+        fileset_id: str,
     ):
         """能力: 获取闪传文件列表 (API: /get_flash_file_list).
 
@@ -1540,7 +1560,7 @@ Returns:
         event: AstrMessageEvent,
         fileset_id: str,
         file_index: int = None,
-        file_name: str = None
+        file_name: str = None,
     ):
         """能力: 获取闪传文件链接 (API: /get_flash_file_url).
 
@@ -1564,20 +1584,19 @@ Returns:
     async def napcat_get_forward_msg_tool(
         self,
         event: AstrMessageEvent,
-        message_id: int,
-        id: str = None
+        message_id: int = None,
+        id: str = None,
     ):
         """能力: 获取合并转发消息的具体内容 (API: /get_forward_msg).
 
 Args:
-    message_id(int): 必填，消息ID。
+    message_id(int): 可选，消息ID。默认使用当前消息 ID。
     id(str): 可选，合并转发 ID。
 
 Returns:
     str: 返回 API 响应的 JSON 字符串。"""
         payload: dict = {}
-        if message_id is not None:
-            payload['message_id'] = message_id
+        payload['message_id'] = message_id
         if id is not None:
             payload['id'] = id
         return await self._call_napcat_api(event, 'get_forward_msg', payload)
@@ -1586,7 +1605,7 @@ Returns:
     async def napcat_get_friend_list_tool(
         self,
         event: AstrMessageEvent,
-        no_cache: bool
+        no_cache: bool,
     ):
         """能力: 获取当前帐号的好友列表 (API: /get_friend_list).
 
@@ -1610,8 +1629,8 @@ Returns:
         quick_reply: bool,
         reverse_order: bool,
         reverseOrder: bool,
-        user_id: int,
-        message_seq: int = None
+        user_id: int = None,
+        message_seq: int = None,
     ):
         """能力: 获取指定好友的历史聊天记录 (API: /get_friend_msg_history).
 
@@ -1622,7 +1641,7 @@ Args:
     quick_reply(bool): 必填，是否快速回复。
     reverse_order(bool): 必填，是否反向排序。
     reverseOrder(bool): 必填，是否反向排序(旧版本兼容)。
-    user_id(int): 必填，用户QQ。
+    user_id(int): 可选，用户QQ。默认使用当前消息发送者的用户 ID。
     message_seq(int): 可选，起始消息序号。
 
 Returns:
@@ -1640,8 +1659,7 @@ Returns:
             payload['reverse_order'] = reverse_order
         if reverseOrder is not None:
             payload['reverseOrder'] = reverseOrder
-        if user_id is not None:
-            payload['user_id'] = user_id
+        payload['user_id'] = user_id
         if message_seq is not None:
             payload['message_seq'] = message_seq
         return await self._call_napcat_api(event, 'get_friend_msg_history', payload)
@@ -1649,7 +1667,7 @@ Returns:
     @filter.llm_tool(name='napcat_get_friends_with_category')
     async def napcat_get_friends_with_category_tool(
         self,
-        event: AstrMessageEvent
+        event: AstrMessageEvent,
     ):
         """能力: 获取好友分组列表 (API: /get_friends_with_category).
 
@@ -1667,14 +1685,14 @@ Returns:
         event: AstrMessageEvent,
         album_id: str,
         attach_info: str,
-        group_id: int
+        group_id: int = None,
     ):
         """能力: 获取群相册列表 (API: /get_group_album_media_list).
 
 Args:
     album_id(str): 必填，相册ID。
     attach_info(str): 必填，附加信息（用于分页）。
-    group_id(int): 必填，群号。
+    group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
 
 Returns:
     str: 返回 API 响应的 JSON 字符串。"""
@@ -1683,62 +1701,58 @@ Returns:
             payload['album_id'] = album_id
         if attach_info is not None:
             payload['attach_info'] = attach_info
-        if group_id is not None:
-            payload['group_id'] = group_id
+        payload['group_id'] = group_id
         return await self._call_napcat_api(event, 'get_group_album_media_list', payload)
 
     @filter.llm_tool(name='napcat_get_group_at_all_remain')
     async def napcat_get_group_at_all_remain_tool(
         self,
         event: AstrMessageEvent,
-        group_id: int
+        group_id: int = None,
     ):
         """能力: 获取群 @全体成员 剩余次数 (API: /get_group_at_all_remain).
 
 Args:
-    group_id(int): 必填，群号。
+    group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
 
 Returns:
     str: 返回 API 响应的 JSON 字符串。"""
         payload: dict = {}
-        if group_id is not None:
-            payload['group_id'] = group_id
+        payload['group_id'] = group_id
         return await self._call_napcat_api(event, 'get_group_at_all_remain', payload)
 
     @filter.llm_tool(name='napcat_get_group_detail_info')
     async def napcat_get_group_detail_info_tool(
         self,
         event: AstrMessageEvent,
-        group_id: int
+        group_id: int = None,
     ):
         """能力: 获取群聊的详细信息，包括成员数、最大成员数等 (API: /get_group_detail_info).
 
 Args:
-    group_id(int): 必填，群号。
+    group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
 
 Returns:
     str: 返回 API 响应的 JSON 字符串。"""
         payload: dict = {}
-        if group_id is not None:
-            payload['group_id'] = group_id
+        payload['group_id'] = group_id
         return await self._call_napcat_api(event, 'get_group_detail_info', payload)
 
     @filter.llm_tool(name='napcat_get_group_file_system_info')
     async def napcat_get_group_file_system_info_tool(
         self,
         event: AstrMessageEvent,
-        group_id: int
+        group_id: int = None,
     ):
         """能力: 获取群聊文件系统的空间及状态信息 (API: /get_group_file_system_info).
 
 Args:
-    group_id(int): 必填，群号。
+    group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
 
 Returns:
     str: 返回 API 响应的 JSON 字符串。"""
         payload: dict = {}
-        if group_id is not None:
-            payload['group_id'] = group_id
+        payload['group_id'] = group_id
         return await self._call_napcat_api(event, 'get_group_file_system_info', payload)
 
     @filter.llm_tool(name='napcat_get_group_file_url')
@@ -1746,14 +1760,14 @@ Returns:
         self,
         event: AstrMessageEvent,
         file_id: str,
-        group_id: int,
-        busid: int = None
+        group_id: int = None,
+        busid: int = None,
     ):
         """能力: 获取指定群文件的下载链接 (API: /get_group_file_url).
 
 Args:
     file_id(str): 必填，文件ID 参考 `File` 对象。
-    group_id(int): 必填，群号。
+    group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
     busid(int): 可选，文件类型 参考 `File` 对象。
 
 Returns:
@@ -1761,8 +1775,7 @@ Returns:
         payload: dict = {}
         if file_id is not None:
             payload['file_id'] = file_id
-        if group_id is not None:
-            payload['group_id'] = group_id
+        payload['group_id'] = group_id
         if busid is not None:
             payload['busid'] = busid
         return await self._call_napcat_api(event, 'get_group_file_url', payload)
@@ -1772,15 +1785,15 @@ Returns:
         self,
         event: AstrMessageEvent,
         file_count: int,
-        group_id: int,
+        group_id: int = None,
         folder: str = None,
-        folder_id: str = None
+        folder_id: str = None,
     ):
         """能力: 获取群子目录文件列表 (API: /get_group_files_by_folder).
 
 Args:
     file_count(int): 必填，一次性获取的文件数量。
-    group_id(int): 必填，群号。
+    group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
     folder(str): 可选，和 folder_id 二选一。
     folder_id(str): 可选，文件夹ID 参考 `Folder` 对象。
 
@@ -1789,8 +1802,7 @@ Returns:
         payload: dict = {}
         if file_count is not None:
             payload['file_count'] = file_count
-        if group_id is not None:
-            payload['group_id'] = group_id
+        payload['group_id'] = group_id
         if folder is not None:
             payload['folder'] = folder
         if folder_id is not None:
@@ -1801,20 +1813,19 @@ Returns:
     async def napcat_get_group_honor_info_tool(
         self,
         event: AstrMessageEvent,
-        group_id: int,
-        type: str
+        type: str,
+        group_id: int = None,
     ):
         """能力: | type | 类型 | | ----------------- | ------------------------ | | all | 所有（默认） | | talkative | 群聊之火 | | performer | 群聊炽焰 | | legend | 龙王 | | strong_newbie | 冒尖小春笋（R.I.P） | | emotion | 快乐源泉 | (API: /get_group_honor_info).
 
 Args:
-    group_id(int): 必填，群号。
+    group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
     type(str): 必填，要获取的群荣誉类型, 可传入 `talkative` `performer` `legend` `strong_newbie` `emotion` 以分别获取单个类型的群荣誉数据, 或传入 `all` 获取所有数据。
 
 Returns:
     str: 返回 API 响应的 JSON 字符串。"""
         payload: dict = {}
-        if group_id is not None:
-            payload['group_id'] = group_id
+        payload['group_id'] = group_id
         if type is not None:
             payload['type'] = type
         return await self._call_napcat_api(event, 'get_group_honor_info', payload)
@@ -1822,7 +1833,7 @@ Returns:
     @filter.llm_tool(name='napcat_get_group_ignore_add_request')
     async def napcat_get_group_ignore_add_request_tool(
         self,
-        event: AstrMessageEvent
+        event: AstrMessageEvent,
     ):
         """能力: 获取群被忽略的加群请求 (API: /get_group_ignore_add_request).
 
@@ -1837,7 +1848,7 @@ Returns:
     @filter.llm_tool(name='napcat_get_group_ignored_notifies')
     async def napcat_get_group_ignored_notifies_tool(
         self,
-        event: AstrMessageEvent
+        event: AstrMessageEvent,
     ):
         """能力: 获取被忽略的入群申请和邀请通知 (API: /get_group_ignored_notifies).
 
@@ -1853,20 +1864,19 @@ Returns:
     async def napcat_get_group_info_tool(
         self,
         event: AstrMessageEvent,
-        group_id: int,
-        no_cache: bool = None
+        group_id: int = None,
+        no_cache: bool = None,
     ):
         """能力: 获取群聊的基本信息 (API: /get_group_info).
 
 Args:
-    group_id(int): 必填，群号。
+    group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
     no_cache(bool): 可选，是否不使用缓存（使用缓存可能更新不及时, 但响应更快） 默认值: `false`。
 
 Returns:
     str: 返回 API 响应的 JSON 字符串。"""
         payload: dict = {}
-        if group_id is not None:
-            payload['group_id'] = group_id
+        payload['group_id'] = group_id
         if no_cache is not None:
             payload['no_cache'] = no_cache
         return await self._call_napcat_api(event, 'get_group_info', payload)
@@ -1875,25 +1885,24 @@ Returns:
     async def napcat_get_group_info_ex_tool(
         self,
         event: AstrMessageEvent,
-        group_id: int
+        group_id: int = None,
     ):
         """能力: 获取群信息ex (API: /get_group_info_ex).
 
 Args:
-    group_id(int): 必填，群号。
+    group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
 
 Returns:
     str: 返回 API 响应的 JSON 字符串。"""
         payload: dict = {}
-        if group_id is not None:
-            payload['group_id'] = group_id
+        payload['group_id'] = group_id
         return await self._call_napcat_api(event, 'get_group_info_ex', payload)
 
     @filter.llm_tool(name='napcat_get_group_list')
     async def napcat_get_group_list_tool(
         self,
         event: AstrMessageEvent,
-        no_cache: bool
+        no_cache: bool,
     ):
         """能力: 获取当前帐号的群聊列表 (API: /get_group_list).
 
@@ -1911,46 +1920,43 @@ Returns:
     async def napcat_get_group_member_info_tool(
         self,
         event: AstrMessageEvent,
-        group_id: int,
         no_cache: bool,
-        user_id: int
+        group_id: int = None,
+        user_id: int = None,
     ):
         """能力: 获取群聊中指定成员的信息 (API: /get_group_member_info).
 
 Args:
-    group_id(int): 必填，群号。
+    group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
     no_cache(bool): 必填，是否不使用缓存（使用缓存可能更新不及时, 但响应更快） 默认值: `false`。
-    user_id(int): 必填，QQ 号。
+    user_id(int): 可选，QQ 号。默认使用当前消息发送者的用户 ID。
 
 Returns:
     str: 返回 API 响应的 JSON 字符串。"""
         payload: dict = {}
-        if group_id is not None:
-            payload['group_id'] = group_id
+        payload['group_id'] = group_id
         if no_cache is not None:
             payload['no_cache'] = no_cache
-        if user_id is not None:
-            payload['user_id'] = user_id
+        payload['user_id'] = user_id
         return await self._call_napcat_api(event, 'get_group_member_info', payload)
 
     @filter.llm_tool(name='napcat_get_group_member_list')
     async def napcat_get_group_member_list_tool(
         self,
         event: AstrMessageEvent,
-        group_id: int,
-        no_cache: bool = None
+        group_id: int = None,
+        no_cache: bool = None,
     ):
         """能力: 获取群聊中的所有成员列表 (API: /get_group_member_list).
 
 Args:
-    group_id(int): 必填，群号。
+    group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
     no_cache(bool): 可选，是否不使用缓存（使用缓存可能更新不及时, 但响应更快） 默认值: `false`。
 
 Returns:
     str: 返回 API 响应的 JSON 字符串。"""
         payload: dict = {}
-        if group_id is not None:
-            payload['group_id'] = group_id
+        payload['group_id'] = group_id
         if no_cache is not None:
             payload['no_cache'] = no_cache
         return await self._call_napcat_api(event, 'get_group_member_list', payload)
@@ -1961,19 +1967,19 @@ Returns:
         event: AstrMessageEvent,
         count: int,
         disable_get_url: bool,
-        group_id: int,
         parse_mult_msg: bool,
         quick_reply: bool,
         reverse_order: bool,
         reverseOrder: bool,
-        message_seq: int = None
+        group_id: int = None,
+        message_seq: int = None,
     ):
         """能力: 获取指定群聊的历史聊天记录 (API: /get_group_msg_history).
 
 Args:
     count(int): 必填，获取消息数量。
     disable_get_url(bool): 必填，是否禁用获取URL。
-    group_id(int): 必填，群号。
+    group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
     parse_mult_msg(bool): 必填，是否解析合并消息。
     quick_reply(bool): 必填，是否快速回复。
     reverse_order(bool): 必填，是否反向排序。
@@ -1987,8 +1993,7 @@ Returns:
             payload['count'] = count
         if disable_get_url is not None:
             payload['disable_get_url'] = disable_get_url
-        if group_id is not None:
-            payload['group_id'] = group_id
+        payload['group_id'] = group_id
         if parse_mult_msg is not None:
             payload['parse_mult_msg'] = parse_mult_msg
         if quick_reply is not None:
@@ -2005,18 +2010,17 @@ Returns:
     async def napcat_get_group_notice_tool(
         self,
         event: AstrMessageEvent,
-        group_id: int
+        group_id: int = None,
     ):
         """能力: _获取群公告 (API: /_get_group_notice).
 
 Args:
-    group_id(int): 必填，群号。
+    group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
 
 Returns:
     str: 返回 API 响应的 JSON 字符串。"""
         payload: dict = {}
-        if group_id is not None:
-            payload['group_id'] = group_id
+        payload['group_id'] = group_id
         return await self._call_napcat_api(event, '_get_group_notice', payload)
 
     @filter.llm_tool(name='napcat_get_group_root_files')
@@ -2024,46 +2028,44 @@ Returns:
         self,
         event: AstrMessageEvent,
         file_count: int,
-        group_id: int
+        group_id: int = None,
     ):
         """能力: 获取群文件根目录下的所有文件和文件夹 (API: /get_group_root_files).
 
 Args:
     file_count(int): 必填，文件数量。
-    group_id(int): 必填，群号。
+    group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
 
 Returns:
     str: 返回 API 响应的 JSON 字符串。"""
         payload: dict = {}
         if file_count is not None:
             payload['file_count'] = file_count
-        if group_id is not None:
-            payload['group_id'] = group_id
+        payload['group_id'] = group_id
         return await self._call_napcat_api(event, 'get_group_root_files', payload)
 
     @filter.llm_tool(name='napcat_get_group_shut_list')
     async def napcat_get_group_shut_list_tool(
         self,
         event: AstrMessageEvent,
-        group_id: int
+        group_id: int = None,
     ):
         """能力: 获取群禁言列表 (API: /get_group_shut_list).
 
 Args:
-    group_id(int): 必填，群号。
+    group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
 
 Returns:
     str: 返回 API 响应的 JSON 字符串。"""
         payload: dict = {}
-        if group_id is not None:
-            payload['group_id'] = group_id
+        payload['group_id'] = group_id
         return await self._call_napcat_api(event, 'get_group_shut_list', payload)
 
     @filter.llm_tool(name='napcat_get_group_system_msg')
     async def napcat_get_group_system_msg_tool(
         self,
         event: AstrMessageEvent,
-        count: int
+        count: int,
     ):
         """能力: 获取群系统消息 (API: /get_group_system_msg).
 
@@ -2082,7 +2084,7 @@ Returns:
         self,
         event: AstrMessageEvent,
         guild_id: str = None,
-        no_cache: bool = None
+        no_cache: bool = None,
     ):
         """能力: 获取子频道列表 (API: /get_guild_channel_list).
 
@@ -2102,7 +2104,7 @@ Returns:
     @filter.llm_tool(name='napcat_get_guild_list')
     async def napcat_get_guild_list_tool(
         self,
-        event: AstrMessageEvent
+        event: AstrMessageEvent,
     ):
         """能力: get_guild_list (API: /get_guild_list).
 
@@ -2119,7 +2121,7 @@ Returns:
         self,
         event: AstrMessageEvent,
         guild_id: str = None,
-        next_token: str = None
+        next_token: str = None,
     ):
         """能力: 获取频道成员列表 (API: /get_guild_member_list).
 
@@ -2140,8 +2142,8 @@ Returns:
     async def napcat_get_guild_member_profile_tool(
         self,
         event: AstrMessageEvent,
+        user_id: int = None,
         guild_id: str = None,
-        user_id: int = None
     ):
         """能力: 单独获取频道成员信息 (API: /get_guild_member_profile).
 
@@ -2162,7 +2164,7 @@ Returns:
     async def napcat_get_guild_meta_by_guest_tool(
         self,
         event: AstrMessageEvent,
-        guild_id: str = None
+        guild_id: str = None,
     ):
         """能力: 通过访客获取频道元数据 (API: /get_guild_meta_by_guest).
 
@@ -2180,20 +2182,19 @@ Returns:
     async def napcat_get_guild_msg_tool(
         self,
         event: AstrMessageEvent,
-        message_id: int,
-        no_cache: bool = None
+        message_id: int = None,
+        no_cache: bool = None,
     ):
         """能力: 获取频道消息 (API: /get_guild_msg).
 
 Args:
-    message_id(int): 必填，频道消息ID。
+    message_id(int): 可选，频道消息ID。默认使用当前消息 ID。
     no_cache(bool): 可选，是否不使用缓存（使用缓存可能更新不及时, 但响应更快） 默认值: false。
 
 Returns:
     str: 返回 API 响应的 JSON 字符串。"""
         payload: dict = {}
-        if message_id is not None:
-            payload['message_id'] = message_id
+        payload['message_id'] = message_id
         if no_cache is not None:
             payload['no_cache'] = no_cache
         return await self._call_napcat_api(event, 'get_guild_msg', payload)
@@ -2202,7 +2203,7 @@ Returns:
     async def napcat_get_guild_roles_tool(
         self,
         event: AstrMessageEvent,
-        guild_id: str
+        guild_id: str,
     ):
         """能力: 获取频道角色列表 (API: /get_guild_roles).
 
@@ -2219,7 +2220,7 @@ Returns:
     @filter.llm_tool(name='napcat_get_guild_service_profile')
     async def napcat_get_guild_service_profile_tool(
         self,
-        event: AstrMessageEvent
+        event: AstrMessageEvent,
     ):
         """能力: get_guild_service_profile (API: /get_guild_service_profile).
 
@@ -2236,7 +2237,7 @@ Returns:
         self,
         event: AstrMessageEvent,
         file: str,
-        file_id: str = None
+        file_id: str = None,
     ):
         """能力: 获取指定图片的信息及路径 (API: /get_image).
 
@@ -2256,7 +2257,7 @@ Returns:
     @filter.llm_tool(name='napcat_get_login_info')
     async def napcat_get_login_info_tool(
         self,
-        event: AstrMessageEvent
+        event: AstrMessageEvent,
     ):
         """能力: 获取当前登录帐号的信息 (API: /get_login_info).
 
@@ -2271,7 +2272,7 @@ Returns:
     @filter.llm_tool(name='napcat_get_mini_app_ark')
     async def napcat_get_mini_app_ark_tool(
         self,
-        event: AstrMessageEvent
+        event: AstrMessageEvent,
     ):
         """能力: 获取小程序 Ark (API: /get_mini_app_ark).
 
@@ -2287,7 +2288,7 @@ Returns:
     async def napcat_get_model_show_tool(
         self,
         event: AstrMessageEvent,
-        model: str
+        model: str,
     ):
         """能力: _获取在线机型 (API: /_get_model_show).
 
@@ -2305,25 +2306,24 @@ Returns:
     async def napcat_get_msg_tool(
         self,
         event: AstrMessageEvent,
-        message_id: int
+        message_id: int = None,
     ):
         """能力: 根据消息 ID 获取消息详细信息 (API: /get_msg).
 
 Args:
-    message_id(int): 必填，消息 ID。
+    message_id(int): 可选，消息 ID。默认使用当前消息 ID。
 
 Returns:
     str: 返回 API 响应的 JSON 字符串。"""
         payload: dict = {}
-        if message_id is not None:
-            payload['message_id'] = message_id
+        payload['message_id'] = message_id
         return await self._call_napcat_api(event, 'get_msg', payload)
 
     @filter.llm_tool(name='napcat_get_online_clients')
     async def napcat_get_online_clients_tool(
         self,
         event: AstrMessageEvent,
-        no_cache: bool = None
+        no_cache: bool = None,
     ):
         """能力: 获取当前登录账号的在线客户端列表 (API: /get_online_clients).
 
@@ -2341,25 +2341,24 @@ Returns:
     async def napcat_get_online_file_msg_tool(
         self,
         event: AstrMessageEvent,
-        user_id: int
+        user_id: int = None,
     ):
         """能力: 获取在线文件消息 (API: /get_online_file_msg).
 
 Args:
-    user_id(int): 必填，用户 QQ。
+    user_id(int): 可选，用户 QQ。默认使用当前消息发送者的用户 ID。
 
 Returns:
     str: 返回 API 响应的 JSON 字符串。"""
         payload: dict = {}
-        if user_id is not None:
-            payload['user_id'] = user_id
+        payload['user_id'] = user_id
         return await self._call_napcat_api(event, 'get_online_file_msg', payload)
 
     @filter.llm_tool(name='napcat_get_private_file_url')
     async def napcat_get_private_file_url_tool(
         self,
         event: AstrMessageEvent,
-        file_id: str
+        file_id: str,
     ):
         """能力: 获取指定私聊文件的下载链接 (API: /get_private_file_url).
 
@@ -2379,7 +2378,7 @@ Returns:
         event: AstrMessageEvent,
         count: int,
         start: int,
-        user_id: int = None
+        user_id: int = None,
     ):
         """能力: 获取点赞列表 (API: /get_profile_like).
 
@@ -2403,20 +2402,19 @@ Returns:
     async def napcat_get_qun_album_list_tool(
         self,
         event: AstrMessageEvent,
-        group_id: int,
-        attach_info: str = None
+        group_id: int = None,
+        attach_info: str = None,
     ):
         """能力: 获取群相册列表 (API: /get_qun_album_list).
 
 Args:
-    group_id(int): 必填，群号。
+    group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
     attach_info(str): 可选，附加信息（用于分页，从上一次返回结果中获取）。
 
 Returns:
     str: 返回 API 响应的 JSON 字符串。"""
         payload: dict = {}
-        if group_id is not None:
-            payload['group_id'] = group_id
+        payload['group_id'] = group_id
         if attach_info is not None:
             payload['attach_info'] = attach_info
         return await self._call_napcat_api(event, 'get_qun_album_list', payload)
@@ -2425,7 +2423,7 @@ Returns:
     async def napcat_get_recent_contact_tool(
         self,
         event: AstrMessageEvent,
-        count: int
+        count: int,
     ):
         """能力: 获取的最新消息是每个会话最新的消息 (API: /get_recent_contact).
 
@@ -2445,7 +2443,7 @@ Returns:
         event: AstrMessageEvent,
         file: str,
         out_format: str,
-        file_id: str = None
+        file_id: str = None,
     ):
         """能力: 获取指定语音文件的信息，并支持格式转换 (API: /get_record).
 
@@ -2468,7 +2466,7 @@ Returns:
     @filter.llm_tool(name='napcat_get_rkey')
     async def napcat_get_rkey_tool(
         self,
-        event: AstrMessageEvent
+        event: AstrMessageEvent,
     ):
         """能力: 获取rkey (API: /get_rkey).
 
@@ -2483,7 +2481,7 @@ Returns:
     @filter.llm_tool(name='napcat_get_rkey_server')
     async def napcat_get_rkey_server_tool(
         self,
-        event: AstrMessageEvent
+        event: AstrMessageEvent,
     ):
         """能力: 获取 RKey 服务器 (API: /get_rkey_server).
 
@@ -2498,7 +2496,7 @@ Returns:
     @filter.llm_tool(name='napcat_get_robot_uin_range')
     async def napcat_get_robot_uin_range_tool(
         self,
-        event: AstrMessageEvent
+        event: AstrMessageEvent,
     ):
         """能力: 获取机器人 UIN 范围 (API: /get_robot_uin_range).
 
@@ -2514,7 +2512,7 @@ Returns:
     async def napcat_get_share_link_tool(
         self,
         event: AstrMessageEvent,
-        fileset_id: str
+        fileset_id: str,
     ):
         """能力: 获取文件分享链接 (API: /get_share_link).
 
@@ -2531,7 +2529,7 @@ Returns:
     @filter.llm_tool(name='napcat_get_status')
     async def napcat_get_status_tool(
         self,
-        event: AstrMessageEvent
+        event: AstrMessageEvent,
     ):
         """能力: 获取状态 (API: /get_status).
 
@@ -2548,21 +2546,20 @@ Returns:
         self,
         event: AstrMessageEvent,
         no_cache: bool,
-        user_id: int
+        user_id: int = None,
     ):
         """能力: 获取账号信息 (API: /get_stranger_info).
 
 Args:
     no_cache(bool): 必填，是否不使用缓存（使用缓存可能更新不及时, 但响应更快） 默认值: `false`。
-    user_id(int): 必填，用户QQ。
+    user_id(int): 可选，用户QQ。默认使用当前消息发送者的用户 ID。
 
 Returns:
     str: 返回 API 响应的 JSON 字符串。"""
         payload: dict = {}
         if no_cache is not None:
             payload['no_cache'] = no_cache
-        if user_id is not None:
-            payload['user_id'] = user_id
+        payload['user_id'] = user_id
         return await self._call_napcat_api(event, 'get_stranger_info', payload)
 
     @filter.llm_tool(name='napcat_get_topic_channel_feeds')
@@ -2570,7 +2567,7 @@ Returns:
         self,
         event: AstrMessageEvent,
         channel_id: str = None,
-        guild_id: str = None
+        guild_id: str = None,
     ):
         """能力: 获取话题频道帖子 (API: /get_topic_channel_feeds).
 
@@ -2590,7 +2587,7 @@ Returns:
     @filter.llm_tool(name='napcat_get_unidirectional_friend_list')
     async def napcat_get_unidirectional_friend_list_tool(
         self,
-        event: AstrMessageEvent
+        event: AstrMessageEvent,
     ):
         """能力: 获取单向好友列表 (API: /get_unidirectional_friend_list).
 
@@ -2605,7 +2602,7 @@ Returns:
     @filter.llm_tool(name='napcat_get_version_info')
     async def napcat_get_version_info_tool(
         self,
-        event: AstrMessageEvent
+        event: AstrMessageEvent,
     ):
         """能力: 获取版本信息 (API: /get_version_info).
 
@@ -2621,24 +2618,22 @@ Returns:
     async def napcat_group_poke_tool(
         self,
         event: AstrMessageEvent,
-        group_id: int,
-        user_id: int,
-        target_id: int = None
+        group_id: int = None,
+        user_id: int = None,
+        target_id: int = None,
     ):
         """能力: 在群聊或私聊中发送戳一戳动作 (API: /group_poke).
 
 Args:
-    group_id(int): 必填，群号。
-    user_id(int): 必填，用户QQ。
+    group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
+    user_id(int): 可选，用户QQ。默认使用当前消息发送者的用户 ID。
     target_id(int): 可选，目标QQ。
 
 Returns:
     str: 返回 API 响应的 JSON 字符串。"""
         payload: dict = {}
-        if group_id is not None:
-            payload['group_id'] = group_id
-        if user_id is not None:
-            payload['user_id'] = user_id
+        payload['group_id'] = group_id
+        payload['user_id'] = user_id
         if target_id is not None:
             payload['target_id'] = target_id
         return await self._call_napcat_api(event, 'group_poke', payload)
@@ -2646,7 +2641,7 @@ Returns:
     @filter.llm_tool(name='napcat_mark_all_as_read')
     async def napcat_mark_all_as_read_tool(
         self,
-        event: AstrMessageEvent
+        event: AstrMessageEvent,
     ):
         """能力: _设置所有消息已读 (API: /_mark_all_as_read).
 
@@ -2662,22 +2657,21 @@ Returns:
     async def napcat_mark_group_msg_as_read_tool(
         self,
         event: AstrMessageEvent,
-        group_id: int,
+        group_id: int = None,
         message_id: int = None,
-        user_id: int = None
+        user_id: int = None,
     ):
         """能力: 标记指定渠道的消息为已读 (API: /mark_group_msg_as_read).
 
 Args:
-    group_id(int): 必填，群号。
+    group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
     message_id(int): 可选，消息ID。
     user_id(int): 可选，用户QQ。
 
 Returns:
     str: 返回 API 响应的 JSON 字符串。"""
         payload: dict = {}
-        if group_id is not None:
-            payload['group_id'] = group_id
+        payload['group_id'] = group_id
         if message_id is not None:
             payload['message_id'] = message_id
         if user_id is not None:
@@ -2690,7 +2684,7 @@ Returns:
         event: AstrMessageEvent,
         group_id: int = None,
         message_id: int = None,
-        user_id: int = None
+        user_id: int = None,
     ):
         """能力: 标记指定渠道的消息为已读 (API: /mark_msg_as_read).
 
@@ -2714,22 +2708,21 @@ Returns:
     async def napcat_mark_private_msg_as_read_tool(
         self,
         event: AstrMessageEvent,
-        user_id: int,
+        user_id: int = None,
         group_id: int = None,
-        message_id: int = None
+        message_id: int = None,
     ):
         """能力: 标记指定渠道的消息为已读 (API: /mark_private_msg_as_read).
 
 Args:
-    user_id(int): 必填，用户QQ。
+    user_id(int): 可选，用户QQ。默认使用当前消息发送者的用户 ID。
     group_id(int): 可选，群号。
     message_id(int): 可选，消息ID。
 
 Returns:
     str: 返回 API 响应的 JSON 字符串。"""
         payload: dict = {}
-        if user_id is not None:
-            payload['user_id'] = user_id
+        payload['user_id'] = user_id
         if group_id is not None:
             payload['group_id'] = group_id
         if message_id is not None:
@@ -2742,15 +2735,15 @@ Returns:
         event: AstrMessageEvent,
         current_parent_directory: str,
         file_id: str,
-        group_id: int,
-        target_parent_directory: str
+        target_parent_directory: str,
+        group_id: int = None,
     ):
         """能力: 移动群文件 (API: /move_group_file).
 
 Args:
     current_parent_directory(str): 必填，根目录填 /。
     file_id(str): 必填，文件ID。
-    group_id(int): 必填，群号。
+    group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
     target_parent_directory(str): 必填，目标父目录。
 
 Returns:
@@ -2760,8 +2753,7 @@ Returns:
             payload['current_parent_directory'] = current_parent_directory
         if file_id is not None:
             payload['file_id'] = file_id
-        if group_id is not None:
-            payload['group_id'] = group_id
+        payload['group_id'] = group_id
         if target_parent_directory is not None:
             payload['target_parent_directory'] = target_parent_directory
         return await self._call_napcat_api(event, 'move_group_file', payload)
@@ -2769,7 +2761,7 @@ Returns:
     @filter.llm_tool(name='napcat_nc_get_packet_status')
     async def napcat_nc_get_packet_status_tool(
         self,
-        event: AstrMessageEvent
+        event: AstrMessageEvent,
     ):
         """能力: 获取底层Packet服务的运行状态 (API: /nc_get_packet_status).
 
@@ -2784,7 +2776,7 @@ Returns:
     @filter.llm_tool(name='napcat_nc_get_rkey')
     async def napcat_nc_get_rkey_tool(
         self,
-        event: AstrMessageEvent
+        event: AstrMessageEvent,
     ):
         """能力: nc获取rkey (API: /nc_get_rkey).
 
@@ -2800,25 +2792,24 @@ Returns:
     async def napcat_nc_get_user_status_tool(
         self,
         event: AstrMessageEvent,
-        user_id: int
+        user_id: int = None,
     ):
         """能力: 获取用户在线状态 (API: /nc_get_user_status).
 
 Args:
-    user_id(int): 必填，QQ号。
+    user_id(int): 可选，QQ号。默认使用当前消息发送者的用户 ID。
 
 Returns:
     str: 返回 API 响应的 JSON 字符串。"""
         payload: dict = {}
-        if user_id is not None:
-            payload['user_id'] = user_id
+        payload['user_id'] = user_id
         return await self._call_napcat_api(event, 'nc_get_user_status', payload)
 
     @filter.llm_tool(name='napcat_ocr_image')
     async def napcat_ocr_image_tool(
         self,
         event: AstrMessageEvent,
-        image: str
+        image: str,
     ):
         """能力: 仅 Windows 可用 (API: /ocr_image).
 
@@ -2835,7 +2826,7 @@ Returns:
     @filter.llm_tool(name='napcat_qidian_get_account_info')
     async def napcat_qidian_get_account_info_tool(
         self,
-        event: AstrMessageEvent
+        event: AstrMessageEvent,
     ):
         """能力: 获取企点账号信息 (API: /qidian_get_account_info).
 
@@ -2853,14 +2844,14 @@ Returns:
         event: AstrMessageEvent,
         element_id: str,
         msg_id: str,
-        user_id: int
+        user_id: int = None,
     ):
         """能力: 接收在线文件 (API: /receive_online_file).
 
 Args:
     element_id(str): 必填，元素 ID。
     msg_id(str): 必填，消息 ID。
-    user_id(int): 必填，用户 QQ。
+    user_id(int): 可选，用户 QQ。默认使用当前消息发送者的用户 ID。
 
 Returns:
     str: 返回 API 响应的 JSON 字符串。"""
@@ -2869,8 +2860,7 @@ Returns:
             payload['element_id'] = element_id
         if msg_id is not None:
             payload['msg_id'] = msg_id
-        if user_id is not None:
-            payload['user_id'] = user_id
+        payload['user_id'] = user_id
         return await self._call_napcat_api(event, 'receive_online_file', payload)
 
     @filter.llm_tool(name='napcat_refuse_online_file')
@@ -2879,14 +2869,14 @@ Returns:
         event: AstrMessageEvent,
         element_id: str,
         msg_id: str,
-        user_id: int
+        user_id: int = None,
     ):
         """能力: 拒绝在线文件 (API: /refuse_online_file).
 
 Args:
     element_id(str): 必填，元素 ID。
     msg_id(str): 必填，消息 ID。
-    user_id(int): 必填，用户 QQ。
+    user_id(int): 可选，用户 QQ。默认使用当前消息发送者的用户 ID。
 
 Returns:
     str: 返回 API 响应的 JSON 字符串。"""
@@ -2895,15 +2885,14 @@ Returns:
             payload['element_id'] = element_id
         if msg_id is not None:
             payload['msg_id'] = msg_id
-        if user_id is not None:
-            payload['user_id'] = user_id
+        payload['user_id'] = user_id
         return await self._call_napcat_api(event, 'refuse_online_file', payload)
 
     @filter.llm_tool(name='napcat_reload_event_filter')
     async def napcat_reload_event_filter_tool(
         self,
         event: AstrMessageEvent,
-        file: str
+        file: str,
     ):
         """能力: 重载事件过滤器 (API: /reload_event_filter).
 
@@ -2923,15 +2912,15 @@ Returns:
         event: AstrMessageEvent,
         current_parent_directory: str,
         file_id: str,
-        group_id: int,
-        new_name: str
+        new_name: str,
+        group_id: int = None,
     ):
         """能力: 重命名群文件 (API: /rename_group_file).
 
 Args:
     current_parent_directory(str): 必填，当前父目录。
     file_id(str): 必填，文件ID。
-    group_id(int): 必填，群号。
+    group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
     new_name(str): 必填，新文件名。
 
 Returns:
@@ -2941,8 +2930,7 @@ Returns:
             payload['current_parent_directory'] = current_parent_directory
         if file_id is not None:
             payload['file_id'] = file_id
-        if group_id is not None:
-            payload['group_id'] = group_id
+        payload['group_id'] = group_id
         if new_name is not None:
             payload['new_name'] = new_name
         return await self._call_napcat_api(event, 'rename_group_file', payload)
@@ -2953,7 +2941,7 @@ Returns:
         event: AstrMessageEvent,
         phone_number: str,
         group_id: int = None,
-        user_id: int = None
+        user_id: int = None,
     ):
         """能力: 获取用户推荐的 Ark 内容 (API: /send_ark_share).
 
@@ -2979,7 +2967,7 @@ Returns:
         event: AstrMessageEvent,
         fileset_id: str,
         group_id: int = None,
-        user_id: int = None
+        user_id: int = None,
     ):
         """能力: 发送闪传消息 (API: /send_flash_msg).
 
@@ -3005,15 +2993,15 @@ Returns:
         event: AstrMessageEvent,
         message: str,
         messages: list,
-        auto_escape: str = None,
         group_id: int = None,
+        user_id: int = None,
+        auto_escape: str = None,
         message_type: str = None,
         news: list = None,
         prompt: str = None,
         source: str = None,
         summary: str = None,
         timeout: int = None,
-        user_id: int = None
     ):
         """能力: 发送合并转发消息 (API: /send_forward_msg).
 
@@ -3062,14 +3050,14 @@ Returns:
         self,
         event: AstrMessageEvent,
         character: str,
-        group_id: int,
-        text: str
+        text: str,
+        group_id: int = None,
     ):
         """能力: 发送 AI 生成的语音到指定群聊 (API: /send_group_ai_record).
 
 Args:
     character(str): 必填，character_id。
-    group_id(int): 必填，群号。
+    group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
     text(str): 必填，语音文本内容。
 
 Returns:
@@ -3077,8 +3065,7 @@ Returns:
         payload: dict = {}
         if character is not None:
             payload['character'] = character
-        if group_id is not None:
-            payload['group_id'] = group_id
+        payload['group_id'] = group_id
         if text is not None:
             payload['text'] = text
         return await self._call_napcat_api(event, 'send_group_ai_record', payload)
@@ -3087,27 +3074,27 @@ Returns:
     async def napcat_send_group_ark_share_tool(
         self,
         event: AstrMessageEvent,
-        group_id: int
+        group_id: int = None,
     ):
         """能力: 获取群分享的 Ark 内容 (API: /send_group_ark_share).
 
 Args:
-    group_id(int): 必填，群号。
+    group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
 
 Returns:
     str: 返回 API 响应的 JSON 字符串。"""
         payload: dict = {}
-        if group_id is not None:
-            payload['group_id'] = group_id
+        payload['group_id'] = group_id
         return await self._call_napcat_api(event, 'send_group_ark_share', payload)
 
     @filter.llm_tool(name='napcat_send_group_forward_msg')
     async def napcat_send_group_forward_msg_tool(
         self,
         event: AstrMessageEvent,
-        group_id: int,
         message: str,
         messages: list,
+        group_id: int = None,
+        user_id: int = None,
         auto_escape: str = None,
         message_type: str = None,
         news: list = None,
@@ -3115,12 +3102,11 @@ Returns:
         source: str = None,
         summary: str = None,
         timeout: int = None,
-        user_id: int = None
     ):
         """能力: 发送群合并转发消息 (API: /send_group_forward_msg).
 
 Args:
-    group_id(int): 必填，群号。
+    group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
     message(str): 必填，See source API docs。
     messages(list): 必填，自定义转发消息, 具体看 [CQcodeopen in new window](https://docs.go-cqhttp.org/cqcode/#%E5%90%88%E5%B9%B6%E8%BD%AC%E5%8F%91%E6%B6%88%E6%81%AF%E8%8A%82%E7%82%B9)。
     auto_escape(str): 可选，是否作为纯文本发送。
@@ -3135,8 +3121,7 @@ Args:
 Returns:
     str: 返回 API 响应的 JSON 字符串。"""
         payload: dict = {}
-        if group_id is not None:
-            payload['group_id'] = group_id
+        payload['group_id'] = group_id
         if message is not None:
             payload['message'] = message
         if messages is not None:
@@ -3163,8 +3148,9 @@ Returns:
     async def napcat_send_group_msg_tool(
         self,
         event: AstrMessageEvent,
-        group_id: int,
         message: str,
+        group_id: int = None,
+        user_id: int = None,
         auto_escape: bool = None,
         message_type: str = None,
         news: list = None,
@@ -3172,12 +3158,11 @@ Returns:
         source: str = None,
         summary: str = None,
         timeout: int = None,
-        user_id: int = None
     ):
         """能力: 发送群消息 (API: /send_group_msg).
 
 Args:
-    group_id(int): 必填，群号。
+    group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
     message(str): 必填，要发送的内容。
     auto_escape(bool): 可选，消息内容是否作为纯文本发送 ( 即不解析 CQ 码 ) , 只在 `message` 字段是字符串时有效 默认值: `false`。
     message_type(str): 可选，消息类型 (private/group)。
@@ -3191,8 +3176,7 @@ Args:
 Returns:
     str: 返回 API 响应的 JSON 字符串。"""
         payload: dict = {}
-        if group_id is not None:
-            payload['group_id'] = group_id
+        payload['group_id'] = group_id
         if message is not None:
             payload['message'] = message
         if auto_escape is not None:
@@ -3219,19 +3203,19 @@ Returns:
         event: AstrMessageEvent,
         confirm_required: str,
         content: str,
-        group_id: int,
         is_show_edit_card: str,
         pinned: str,
         tip_window_type: str,
         type: str,
-        image: str = None
+        group_id: int = None,
+        image: str = None,
     ):
         """能力: _发送群公告 (API: /_send_group_notice).
 
 Args:
     confirm_required(str): 必填，是否需要确认 (0/1)。
     content(str): 必填，公告内容。
-    group_id(int): 必填，群号。
+    group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
     is_show_edit_card(str): 必填，是否显示修改群名片引导 (0/1)。
     pinned(str): 必填，是否置顶 (0/1)。
     tip_window_type(str): 必填，弹窗类型 (默认为 0)。
@@ -3245,8 +3229,7 @@ Returns:
             payload['confirm_required'] = confirm_required
         if content is not None:
             payload['content'] = content
-        if group_id is not None:
-            payload['group_id'] = group_id
+        payload['group_id'] = group_id
         if is_show_edit_card is not None:
             payload['is_show_edit_card'] = is_show_edit_card
         if pinned is not None:
@@ -3263,18 +3246,17 @@ Returns:
     async def napcat_send_group_sign_tool(
         self,
         event: AstrMessageEvent,
-        group_id: int
+        group_id: int = None,
     ):
         """能力: 群打卡 (API: /send_group_sign).
 
 Args:
-    group_id(int): 必填，群号。
+    group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
 
 Returns:
     str: 返回 API 响应的 JSON 字符串。"""
         payload: dict = {}
-        if group_id is not None:
-            payload['group_id'] = group_id
+        payload['group_id'] = group_id
         return await self._call_napcat_api(event, 'send_group_sign', payload)
 
     @filter.llm_tool(name='napcat_send_guild_channel_msg')
@@ -3283,7 +3265,7 @@ Returns:
         event: AstrMessageEvent,
         channel_id: str = None,
         guild_id: str = None,
-        message: str = None
+        message: str = None,
     ):
         """能力: 发送信息到子频道 (API: /send_guild_channel_msg).
 
@@ -3308,45 +3290,44 @@ Returns:
         self,
         event: AstrMessageEvent,
         times: int,
-        user_id: int
+        user_id: int = None,
     ):
         """能力: 给指定用户点赞 (API: /send_like).
 
 Args:
     times(int): 必填，赞的次数，每个好友每天最多 10 次 默认值: 1。
-    user_id(int): 必填，对方 QQ 号。
+    user_id(int): 可选，对方 QQ 号。默认使用当前消息发送者的用户 ID。
 
 Returns:
     str: 返回 API 响应的 JSON 字符串。"""
         payload: dict = {}
         if times is not None:
             payload['times'] = times
-        if user_id is not None:
-            payload['user_id'] = user_id
+        payload['user_id'] = user_id
         return await self._call_napcat_api(event, 'send_like', payload)
 
     @filter.llm_tool(name='napcat_send_msg')
     async def napcat_send_msg_tool(
         self,
         event: AstrMessageEvent,
-        group_id: int,
         message: str,
         message_type: str,
-        user_id: int,
+        group_id: int = None,
+        user_id: int = None,
         auto_escape: bool = None,
         news: list = None,
         prompt: str = None,
         source: str = None,
         summary: str = None,
-        timeout: int = None
+        timeout: int = None,
     ):
         """能力: send_msg (API: /send_msg).
 
 Args:
-    group_id(int): 必填，群号 ( 消息类型为 `group` 时需要 )。
+    group_id(int): 可选，群号 ( 消息类型为 `group` 时需要 )。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
     message(str): 必填，要发送的内容。
     message_type(str): 必填，消息类型, 支持 `private`、`group` , 分别对应私聊、群组, 如不传入, 则根据传入的 `*_id` 参数判断。
-    user_id(int): 必填，对方 QQ 号 ( 消息类型为 `private` 时需要 )。
+    user_id(int): 可选，对方 QQ 号 ( 消息类型为 `private` 时需要 )。默认使用当前消息发送者的用户 ID。
     auto_escape(bool): 可选，消息内容是否作为纯文本发送 ( 即不解析 CQ 码 ) , 只在 `message` 字段是字符串时有效 默认值: `false`。
     news(list): 可选，合并转发新闻。
     prompt(str): 可选，合并转发提示。
@@ -3357,14 +3338,12 @@ Args:
 Returns:
     str: 返回 API 响应的 JSON 字符串。"""
         payload: dict = {}
-        if group_id is not None:
-            payload['group_id'] = group_id
+        payload['group_id'] = group_id
         if message is not None:
             payload['message'] = message
         if message_type is not None:
             payload['message_type'] = message_type
-        if user_id is not None:
-            payload['user_id'] = user_id
+        payload['user_id'] = user_id
         if auto_escape is not None:
             payload['auto_escape'] = auto_escape
         if news is not None:
@@ -3384,14 +3363,14 @@ Returns:
         self,
         event: AstrMessageEvent,
         file_path: str,
-        user_id: int,
-        file_name: str = None
+        user_id: int = None,
+        file_name: str = None,
     ):
         """能力: 发送在线文件 (API: /send_online_file).
 
 Args:
     file_path(str): 必填，本地文件路径。
-    user_id(int): 必填，用户 QQ。
+    user_id(int): 可选，用户 QQ。默认使用当前消息发送者的用户 ID。
     file_name(str): 可选，文件名 (可选)。
 
 Returns:
@@ -3399,8 +3378,7 @@ Returns:
         payload: dict = {}
         if file_path is not None:
             payload['file_path'] = file_path
-        if user_id is not None:
-            payload['user_id'] = user_id
+        payload['user_id'] = user_id
         if file_name is not None:
             payload['file_name'] = file_name
         return await self._call_napcat_api(event, 'send_online_file', payload)
@@ -3410,14 +3388,14 @@ Returns:
         self,
         event: AstrMessageEvent,
         folder_path: str,
-        user_id: int,
-        folder_name: str = None
+        user_id: int = None,
+        folder_name: str = None,
     ):
         """能力: 发送在线文件夹 (API: /send_online_folder).
 
 Args:
     folder_path(str): 必填，本地文件夹路径。
-    user_id(int): 必填，用户 QQ。
+    user_id(int): 可选，用户 QQ。默认使用当前消息发送者的用户 ID。
     folder_name(str): 可选，文件夹名称 (可选)。
 
 Returns:
@@ -3425,8 +3403,7 @@ Returns:
         payload: dict = {}
         if folder_path is not None:
             payload['folder_path'] = folder_path
-        if user_id is not None:
-            payload['user_id'] = user_id
+        payload['user_id'] = user_id
         if folder_name is not None:
             payload['folder_name'] = folder_name
         return await self._call_napcat_api(event, 'send_online_folder', payload)
@@ -3437,7 +3414,7 @@ Returns:
         event: AstrMessageEvent,
         cmd: str,
         data: str,
-        rsp: str
+        rsp: str,
     ):
         """能力: 发送原始数据包 (API: /send_packet).
 
@@ -3461,22 +3438,21 @@ Returns:
     async def napcat_send_poke_tool(
         self,
         event: AstrMessageEvent,
-        user_id: int,
+        user_id: int = None,
         group_id: int = None,
-        target_id: int = None
+        target_id: int = None,
     ):
         """能力: 在群聊或私聊中发送戳一戳动作 (API: /send_poke).
 
 Args:
-    user_id(int): 必填，不填则为私聊戳。
+    user_id(int): 可选，不填则为私聊戳。默认使用当前消息发送者的用户 ID。
     group_id(int): 可选，不填则为私聊戳。
     target_id(int): 可选，不填则为私聊戳。
 
 Returns:
     str: 返回 API 响应的 JSON 字符串。"""
         payload: dict = {}
-        if user_id is not None:
-            payload['user_id'] = user_id
+        payload['user_id'] = user_id
         if group_id is not None:
             payload['group_id'] = group_id
         if target_id is not None:
@@ -3489,22 +3465,22 @@ Returns:
         event: AstrMessageEvent,
         message: str,
         messages: list,
-        user_id: int,
-        auto_escape: str = None,
+        user_id: int = None,
         group_id: int = None,
+        auto_escape: str = None,
         message_type: str = None,
         news: list = None,
         prompt: str = None,
         source: str = None,
         summary: str = None,
-        timeout: int = None
+        timeout: int = None,
     ):
         """能力: 发送私聊合并转发消息 (API: /send_private_forward_msg).
 
 Args:
     message(str): 必填，See source API docs。
     messages(list): 必填，自定义转发消息, 具体看 [CQcodeopen in new window](https://docs.go-cqhttp.org/cqcode/#%E5%90%88%E5%B9%B6%E8%BD%AC%E5%8F%91%E6%B6%88%E6%81%AF%E8%8A%82%E7%82%B9)。
-    user_id(int): 必填，好友QQ号。
+    user_id(int): 可选，好友QQ号。默认使用当前消息发送者的用户 ID。
     auto_escape(str): 可选，是否作为纯文本发送。
     group_id(int): 可选，群号。
     message_type(str): 可选，消息类型 (private/group)。
@@ -3521,8 +3497,7 @@ Returns:
             payload['message'] = message
         if messages is not None:
             payload['messages'] = messages
-        if user_id is not None:
-            payload['user_id'] = user_id
+        payload['user_id'] = user_id
         if auto_escape is not None:
             payload['auto_escape'] = auto_escape
         if group_id is not None:
@@ -3545,23 +3520,23 @@ Returns:
     async def napcat_send_private_msg_tool(
         self,
         event: AstrMessageEvent,
-        group_id: int,
         message: str,
-        user_id: int,
+        group_id: int = None,
+        user_id: int = None,
         auto_escape: bool = None,
         message_type: str = None,
         news: list = None,
         prompt: str = None,
         source: str = None,
         summary: str = None,
-        timeout: int = None
+        timeout: int = None,
     ):
         """能力: send_private_msg (API: /send_private_msg).
 
 Args:
-    group_id(int): 必填，主动发起临时会话时的来源群号(可选, 机器人本身必须是管理员/群主)。
+    group_id(int): 可选，主动发起临时会话时的来源群号(可选, 机器人本身必须是管理员/群主)。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
     message(str): 必填，要发送的内容。
-    user_id(int): 必填，对方 QQ 号。
+    user_id(int): 可选，对方 QQ 号。默认使用当前消息发送者的用户 ID。
     auto_escape(bool): 可选，消息内容是否作为纯文本发送 ( 即不解析 CQ 码 ) , 只在 `message` 字段是字符串时有效 默认值: `false`。
     message_type(str): 可选，消息类型 (private/group)。
     news(list): 可选，合并转发新闻。
@@ -3573,12 +3548,10 @@ Args:
 Returns:
     str: 返回 API 响应的 JSON 字符串。"""
         payload: dict = {}
-        if group_id is not None:
-            payload['group_id'] = group_id
+        payload['group_id'] = group_id
         if message is not None:
             payload['message'] = message
-        if user_id is not None:
-            payload['user_id'] = user_id
+        payload['user_id'] = user_id
         if auto_escape is not None:
             payload['auto_escape'] = auto_escape
         if message_type is not None:
@@ -3601,7 +3574,7 @@ Returns:
         event: AstrMessageEvent,
         face_id: str,
         face_type: str,
-        wording: str
+        wording: str,
     ):
         """能力: 设置自定义在线状态 (API: /set_diy_online_status).
 
@@ -3626,7 +3599,7 @@ Returns:
         self,
         event: AstrMessageEvent,
         approve: bool,
-        flag: str
+        flag: str,
     ):
         """能力: 同意或拒绝系统的可疑好友申请 (API: /set_doubt_friends_add_request).
 
@@ -3647,18 +3620,17 @@ Returns:
     async def napcat_set_essence_msg_tool(
         self,
         event: AstrMessageEvent,
-        message_id: int
+        message_id: int = None,
     ):
         """能力: 将一条消息设置为群精华消息 (API: /set_essence_msg).
 
 Args:
-    message_id(int): 必填，消息ID。
+    message_id(int): 可选，消息ID。默认使用当前消息 ID。
 
 Returns:
     str: 返回 API 响应的 JSON 字符串。"""
         payload: dict = {}
-        if message_id is not None:
-            payload['message_id'] = message_id
+        payload['message_id'] = message_id
         return await self._call_napcat_api(event, 'set_essence_msg', payload)
 
     @filter.llm_tool(name='napcat_set_friend_add_request')
@@ -3667,7 +3639,7 @@ Returns:
         event: AstrMessageEvent,
         approve: bool,
         flag: str,
-        remark: str
+        remark: str,
     ):
         """能力: 同意或拒绝加好友请求 (API: /set_friend_add_request).
 
@@ -3692,21 +3664,20 @@ Returns:
         self,
         event: AstrMessageEvent,
         remark: str,
-        user_id: int
+        user_id: int = None,
     ):
         """能力: 设置好友备注 (API: /set_friend_remark).
 
 Args:
     remark(str): 必填，备注内容。
-    user_id(int): 必填，对方 QQ 号。
+    user_id(int): 可选，对方 QQ 号。默认使用当前消息发送者的用户 ID。
 
 Returns:
     str: 返回 API 响应的 JSON 字符串。"""
         payload: dict = {}
         if remark is not None:
             payload['remark'] = remark
-        if user_id is not None:
-            payload['user_id'] = user_id
+        payload['user_id'] = user_id
         return await self._call_napcat_api(event, 'set_friend_remark', payload)
 
     @filter.llm_tool(name='napcat_set_group_add_option')
@@ -3714,15 +3685,15 @@ Returns:
         self,
         event: AstrMessageEvent,
         add_type: int,
-        group_id: int,
+        group_id: int = None,
         group_answer: str = None,
-        group_question: str = None
+        group_question: str = None,
     ):
         """能力: 设置群加群选项 (API: /set_group_add_option).
 
 Args:
     add_type(int): 必填，加群方式。
-    group_id(int): 必填，群号。
+    group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
     group_answer(str): 可选，加群答案。
     group_question(str): 可选，加群问题。
 
@@ -3731,8 +3702,7 @@ Returns:
         payload: dict = {}
         if add_type is not None:
             payload['add_type'] = add_type
-        if group_id is not None:
-            payload['group_id'] = group_id
+        payload['group_id'] = group_id
         if group_answer is not None:
             payload['group_answer'] = group_answer
         if group_question is not None:
@@ -3746,7 +3716,7 @@ Returns:
         approve: bool,
         flag: str,
         count: int = None,
-        reason: str = None
+        reason: str = None,
     ):
         """能力: 同意或拒绝加群请求或邀请 (API: /set_group_add_request).
 
@@ -3774,25 +3744,23 @@ Returns:
         self,
         event: AstrMessageEvent,
         enable: bool,
-        group_id: int,
-        user_id: int
+        group_id: int = None,
+        user_id: int = None,
     ):
         """能力: 设置群管理 (API: /set_group_admin).
 
 Args:
     enable(bool): 必填，true 为设置, false 为取消 默认值: `true`。
-    group_id(int): 必填，群号。
-    user_id(int): 必填，要设置管理员的 QQ 号。
+    group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
+    user_id(int): 可选，要设置管理员的 QQ 号。默认使用当前消息发送者的用户 ID。
 
 Returns:
     str: 返回 API 响应的 JSON 字符串。"""
         payload: dict = {}
         if enable is not None:
             payload['enable'] = enable
-        if group_id is not None:
-            payload['group_id'] = group_id
-        if user_id is not None:
-            payload['user_id'] = user_id
+        payload['group_id'] = group_id
+        payload['user_id'] = user_id
         return await self._call_napcat_api(event, 'set_group_admin', payload)
 
     @filter.llm_tool(name='napcat_set_group_album_media_like')
@@ -3800,16 +3768,16 @@ Returns:
         self,
         event: AstrMessageEvent,
         album_id: str,
-        group_id: int,
         id: str,
         lloc: str,
-        set: bool
+        set: bool,
+        group_id: int = None,
     ):
         """能力: 点赞群相册 (API: /set_group_album_media_like).
 
 Args:
     album_id(str): 必填，相册ID。
-    group_id(int): 必填，群号。
+    group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
     id(str): 必填，点赞ID。
     lloc(str): 必填，媒体ID (lloc)。
     set(bool): 必填，是否点赞。
@@ -3819,8 +3787,7 @@ Returns:
         payload: dict = {}
         if album_id is not None:
             payload['album_id'] = album_id
-        if group_id is not None:
-            payload['group_id'] = group_id
+        payload['group_id'] = group_id
         if id is not None:
             payload['id'] = id
         if lloc is not None:
@@ -3833,20 +3800,19 @@ Returns:
     async def napcat_set_group_anonymous_tool(
         self,
         event: AstrMessageEvent,
-        group_id: int,
-        enable: bool = None
+        group_id: int = None,
+        enable: bool = None,
     ):
         """能力: 群组匿名 (API: /set_group_anonymous).
 
 Args:
-    group_id(int): 必填，群号。
+    group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
     enable(bool): 可选，是否允许匿名聊天 默认值: `true`。
 
 Returns:
     str: 返回 API 响应的 JSON 字符串。"""
         payload: dict = {}
-        if group_id is not None:
-            payload['group_id'] = group_id
+        payload['group_id'] = group_id
         if enable is not None:
             payload['enable'] = enable
         return await self._call_napcat_api(event, 'set_group_anonymous', payload)
@@ -3855,16 +3821,16 @@ Returns:
     async def napcat_set_group_anonymous_ban_tool(
         self,
         event: AstrMessageEvent,
-        group_id: int,
+        group_id: int = None,
         anonymous: dict = None,
         anonymous_flag: str = None,
         duration: int = None,
-        flag: str = None
+        flag: str = None,
     ):
         """能力: 群组匿名用户禁言 (API: /set_group_anonymous_ban).
 
 Args:
-    group_id(int): 必填，群号。
+    group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
     anonymous(dict): 可选，可选, 要禁言的匿名用户对象（群消息上报的 `anonymous` 字段）。
     anonymous_flag(str): 可选，可选, 要禁言的匿名用户的 flag（需从群消息上报的数据中获得）。
     duration(int): 可选，禁言时长, 单位秒, 无法取消匿名用户禁言 默认值: `30 * 60`。
@@ -3873,8 +3839,7 @@ Args:
 Returns:
     str: 返回 API 响应的 JSON 字符串。"""
         payload: dict = {}
-        if group_id is not None:
-            payload['group_id'] = group_id
+        payload['group_id'] = group_id
         if anonymous is not None:
             payload['anonymous'] = anonymous
         if anonymous_flag is not None:
@@ -3890,49 +3855,45 @@ Returns:
         self,
         event: AstrMessageEvent,
         duration: int,
-        group_id: int,
-        user_id: int
+        group_id: int = None,
+        user_id: int = None,
     ):
         """能力: 群禁言 (API: /set_group_ban).
 
 Args:
     duration(int): 必填，禁言时长, 单位秒, 0 表示取消禁言 默认值: `30 * 60`。
-    group_id(int): 必填，群号。
-    user_id(int): 必填，要禁言的 QQ 号。
+    group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
+    user_id(int): 可选，要禁言的 QQ 号。默认使用当前消息发送者的用户 ID。
 
 Returns:
     str: 返回 API 响应的 JSON 字符串。"""
         payload: dict = {}
         if duration is not None:
             payload['duration'] = duration
-        if group_id is not None:
-            payload['group_id'] = group_id
-        if user_id is not None:
-            payload['user_id'] = user_id
+        payload['group_id'] = group_id
+        payload['user_id'] = user_id
         return await self._call_napcat_api(event, 'set_group_ban', payload)
 
     @filter.llm_tool(name='napcat_set_group_card')
     async def napcat_set_group_card_tool(
         self,
         event: AstrMessageEvent,
-        group_id: int,
-        user_id: int,
-        card: str = None
+        group_id: int = None,
+        user_id: int = None,
+        card: str = None,
     ):
         """能力: 设置群聊中指定成员的群名片 (API: /set_group_card).
 
 Args:
-    group_id(int): 必填，群号。
-    user_id(int): 必填，要设置的 QQ 号。
+    group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
+    user_id(int): 可选，要设置的 QQ 号。默认使用当前消息发送者的用户 ID。
     card(str): 可选，群名片内容, 不填或空字符串表示删除群名片 默认值: 空。
 
 Returns:
     str: 返回 API 响应的 JSON 字符串。"""
         payload: dict = {}
-        if group_id is not None:
-            payload['group_id'] = group_id
-        if user_id is not None:
-            payload['user_id'] = user_id
+        payload['group_id'] = group_id
+        payload['user_id'] = user_id
         if card is not None:
             payload['card'] = card
         return await self._call_napcat_api(event, 'set_group_card', payload)
@@ -3941,24 +3902,22 @@ Returns:
     async def napcat_set_group_kick_tool(
         self,
         event: AstrMessageEvent,
-        group_id: int,
-        user_id: int,
-        reject_add_request: bool = None
+        group_id: int = None,
+        user_id: int = None,
+        reject_add_request: bool = None,
     ):
         """能力: 将指定成员踢出群聊 (API: /set_group_kick).
 
 Args:
-    group_id(int): 必填，群号。
-    user_id(int): 必填，要踢的 QQ 号。
+    group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
+    user_id(int): 可选，要踢的 QQ 号。默认使用当前消息发送者的用户 ID。
     reject_add_request(bool): 可选，拒绝此人的加群请求 默认值: `false`。
 
 Returns:
     str: 返回 API 响应的 JSON 字符串。"""
         payload: dict = {}
-        if group_id is not None:
-            payload['group_id'] = group_id
-        if user_id is not None:
-            payload['user_id'] = user_id
+        payload['group_id'] = group_id
+        payload['user_id'] = user_id
         if reject_add_request is not None:
             payload['reject_add_request'] = reject_add_request
         return await self._call_napcat_api(event, 'set_group_kick', payload)
@@ -3967,24 +3926,22 @@ Returns:
     async def napcat_set_group_kick_members_tool(
         self,
         event: AstrMessageEvent,
-        group_id: int,
-        user_id: int,
-        reject_add_request: bool = None
+        group_id: int = None,
+        user_id: int = None,
+        reject_add_request: bool = None,
     ):
         """能力: 从指定群聊中批量踢出多个成员 (API: /set_group_kick_members).
 
 Args:
-    group_id(int): 必填，群号。
-    user_id(int): 必填，QQ号列表。
+    group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
+    user_id(int): 可选，QQ号列表。默认使用当前消息发送者的用户 ID。
     reject_add_request(bool): 可选，是否拒绝加群请求。
 
 Returns:
     str: 返回 API 响应的 JSON 字符串。"""
         payload: dict = {}
-        if group_id is not None:
-            payload['group_id'] = group_id
-        if user_id is not None:
-            payload['user_id'] = user_id
+        payload['group_id'] = group_id
+        payload['user_id'] = user_id
         if reject_add_request is not None:
             payload['reject_add_request'] = reject_add_request
         return await self._call_napcat_api(event, 'set_group_kick_members', payload)
@@ -3993,20 +3950,19 @@ Returns:
     async def napcat_set_group_leave_tool(
         self,
         event: AstrMessageEvent,
-        group_id: int,
-        is_dismiss: bool = None
+        group_id: int = None,
+        is_dismiss: bool = None,
     ):
         """能力: 退出或解散指定群聊 (API: /set_group_leave).
 
 Args:
-    group_id(int): 必填，群号。
+    group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
     is_dismiss(bool): 可选，是否解散, 如果登录号是群主, 则仅在此项为 true 时能够解散 默认值: `false`。
 
 Returns:
     str: 返回 API 响应的 JSON 字符串。"""
         payload: dict = {}
-        if group_id is not None:
-            payload['group_id'] = group_id
+        payload['group_id'] = group_id
         if is_dismiss is not None:
             payload['is_dismiss'] = is_dismiss
         return await self._call_napcat_api(event, 'set_group_leave', payload)
@@ -4015,20 +3971,19 @@ Returns:
     async def napcat_set_group_name_tool(
         self,
         event: AstrMessageEvent,
-        group_id: int,
-        group_name: str
+        group_name: str,
+        group_id: int = None,
     ):
         """能力: 设置群名 (API: /set_group_name).
 
 Args:
-    group_id(int): 必填，群号。
+    group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
     group_name(str): 必填，群名称。
 
 Returns:
     str: 返回 API 响应的 JSON 字符串。"""
         payload: dict = {}
-        if group_id is not None:
-            payload['group_id'] = group_id
+        payload['group_id'] = group_id
         if group_name is not None:
             payload['group_name'] = group_name
         return await self._call_napcat_api(event, 'set_group_name', payload)
@@ -4038,14 +3993,14 @@ Returns:
         self,
         event: AstrMessageEvent,
         file: str,
-        group_id: int,
-        cache: int = None
+        group_id: int = None,
+        cache: int = None,
     ):
         """能力: 修改指定群聊的头像 (API: /set_group_portrait).
 
 Args:
     file(str): 必填，头像文件路径或 URL。
-    group_id(int): 必填，群号。
+    group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
     cache(int): 可选，表示是否使用已缓存的文件。
 
 Returns:
@@ -4053,8 +4008,7 @@ Returns:
         payload: dict = {}
         if file is not None:
             payload['file'] = file
-        if group_id is not None:
-            payload['group_id'] = group_id
+        payload['group_id'] = group_id
         if cache is not None:
             payload['cache'] = cache
         return await self._call_napcat_api(event, 'set_group_portrait', payload)
@@ -4063,20 +4017,19 @@ Returns:
     async def napcat_set_group_remark_tool(
         self,
         event: AstrMessageEvent,
-        group_id: int,
-        remark: str
+        remark: str,
+        group_id: int = None,
     ):
         """能力: 设置群备注 (API: /set_group_remark).
 
 Args:
-    group_id(int): 必填，群号。
+    group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
     remark(str): 必填，备注。
 
 Returns:
     str: 返回 API 响应的 JSON 字符串。"""
         payload: dict = {}
-        if group_id is not None:
-            payload['group_id'] = group_id
+        payload['group_id'] = group_id
         if remark is not None:
             payload['remark'] = remark
         return await self._call_napcat_api(event, 'set_group_remark', payload)
@@ -4085,22 +4038,21 @@ Returns:
     async def napcat_set_group_robot_add_option_tool(
         self,
         event: AstrMessageEvent,
-        group_id: int,
+        group_id: int = None,
         robot_member_examine: int = None,
-        robot_member_switch: int = None
+        robot_member_switch: int = None,
     ):
         """能力: 设置群机器人加群选项 (API: /set_group_robot_add_option).
 
 Args:
-    group_id(int): 必填，群号。
+    group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
     robot_member_examine(int): 可选，机器人成员审核。
     robot_member_switch(int): 可选，机器人成员开关。
 
 Returns:
     str: 返回 API 响应的 JSON 字符串。"""
         payload: dict = {}
-        if group_id is not None:
-            payload['group_id'] = group_id
+        payload['group_id'] = group_id
         if robot_member_examine is not None:
             payload['robot_member_examine'] = robot_member_examine
         if robot_member_switch is not None:
@@ -4111,22 +4063,21 @@ Returns:
     async def napcat_set_group_search_tool(
         self,
         event: AstrMessageEvent,
-        group_id: int,
+        group_id: int = None,
         no_code_finger_open: int = None,
-        no_finger_open: int = None
+        no_finger_open: int = None,
     ):
         """能力: 设置群搜索 (API: /set_group_search).
 
 Args:
-    group_id(int): 必填，群号。
+    group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
     no_code_finger_open(int): 可选，未知。
     no_finger_open(int): 可选，未知。
 
 Returns:
     str: 返回 API 响应的 JSON 字符串。"""
         payload: dict = {}
-        if group_id is not None:
-            payload['group_id'] = group_id
+        payload['group_id'] = group_id
         if no_code_finger_open is not None:
             payload['no_code_finger_open'] = no_code_finger_open
         if no_finger_open is not None:
@@ -4137,46 +4088,43 @@ Returns:
     async def napcat_set_group_sign_tool(
         self,
         event: AstrMessageEvent,
-        group_id: int
+        group_id: int = None,
     ):
         """能力: 群打卡 (API: /set_group_sign).
 
 Args:
-    group_id(int): 必填，群号。
+    group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
 
 Returns:
     str: 返回 API 响应的 JSON 字符串。"""
         payload: dict = {}
-        if group_id is not None:
-            payload['group_id'] = group_id
+        payload['group_id'] = group_id
         return await self._call_napcat_api(event, 'set_group_sign', payload)
 
     @filter.llm_tool(name='napcat_set_group_special_title')
     async def napcat_set_group_special_title_tool(
         self,
         event: AstrMessageEvent,
-        group_id: int,
         special_title: str,
-        user_id: int,
-        duration: int = None
+        group_id: int = None,
+        user_id: int = None,
+        duration: int = None,
     ):
         """能力: 设置群聊中指定成员的专属头衔 (API: /set_group_special_title).
 
 Args:
-    group_id(int): 必填，群号。
+    group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
     special_title(str): 必填，专属头衔, 不填或空字符串表示删除专属头衔 默认值: 空。
-    user_id(int): 必填，要设置的 QQ 号。
+    user_id(int): 可选，要设置的 QQ 号。默认使用当前消息发送者的用户 ID。
     duration(int): 可选，专属头衔有效期, 单位秒, -1 表示永久, 不过此项似乎没有效果, 可能是只有某些特殊的时间长度有效, 有待测试 默认值: `-1`。
 
 Returns:
     str: 返回 API 响应的 JSON 字符串。"""
         payload: dict = {}
-        if group_id is not None:
-            payload['group_id'] = group_id
+        payload['group_id'] = group_id
         if special_title is not None:
             payload['special_title'] = special_title
-        if user_id is not None:
-            payload['user_id'] = user_id
+        payload['user_id'] = user_id
         if duration is not None:
             payload['duration'] = duration
         return await self._call_napcat_api(event, 'set_group_special_title', payload)
@@ -4185,24 +4133,22 @@ Returns:
     async def napcat_set_group_todo_tool(
         self,
         event: AstrMessageEvent,
-        group_id: int,
-        message_id: int,
-        message_seq: int = None
+        group_id: int = None,
+        message_id: int = None,
+        message_seq: int = None,
     ):
         """能力: 设置群代办 (API: /set_group_todo).
 
 Args:
-    group_id(int): 必填，群号。
-    message_id(int): 必填，消息ID。
+    group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
+    message_id(int): 可选，消息ID。默认使用当前消息 ID。
     message_seq(int): 可选，消息Seq (可选)。
 
 Returns:
     str: 返回 API 响应的 JSON 字符串。"""
         payload: dict = {}
-        if group_id is not None:
-            payload['group_id'] = group_id
-        if message_id is not None:
-            payload['message_id'] = message_id
+        payload['group_id'] = group_id
+        payload['message_id'] = message_id
         if message_seq is not None:
             payload['message_seq'] = message_seq
         return await self._call_napcat_api(event, 'set_group_todo', payload)
@@ -4212,21 +4158,20 @@ Returns:
         self,
         event: AstrMessageEvent,
         enable: bool,
-        group_id: int
+        group_id: int = None,
     ):
         """能力: 全体禁言 (API: /set_group_whole_ban).
 
 Args:
     enable(bool): 必填，是否开启全员禁言 默认值: `true`。
-    group_id(int): 必填，群号。
+    group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
 
 Returns:
     str: 返回 API 响应的 JSON 字符串。"""
         payload: dict = {}
         if enable is not None:
             payload['enable'] = enable
-        if group_id is not None:
-            payload['group_id'] = group_id
+        payload['group_id'] = group_id
         return await self._call_napcat_api(event, 'set_group_whole_ban', payload)
 
     @filter.llm_tool(name='napcat_set_guild_member_role')
@@ -4236,7 +4181,7 @@ Returns:
         guild_id: str,
         role_id: str,
         set: bool = None,
-        users: str = None
+        users: str = None,
     ):
         """能力: 设置用户在频道中的角色 (API: /set_guild_member_role).
 
@@ -4264,21 +4209,20 @@ Returns:
         self,
         event: AstrMessageEvent,
         event_type: int,
-        user_id: int
+        user_id: int = None,
     ):
         """能力: 设置输入状态 (API: /set_input_status).
 
 Args:
     event_type(int): 必填，事件类型。
-    user_id(int): 必填，QQ号。
+    user_id(int): 可选，QQ号。默认使用当前消息发送者的用户 ID。
 
 Returns:
     str: 返回 API 响应的 JSON 字符串。"""
         payload: dict = {}
         if event_type is not None:
             payload['event_type'] = event_type
-        if user_id is not None:
-            payload['user_id'] = user_id
+        payload['user_id'] = user_id
         return await self._call_napcat_api(event, 'set_input_status', payload)
 
     @filter.llm_tool(name='napcat_set_model_show')
@@ -4286,7 +4230,7 @@ Returns:
         self,
         event: AstrMessageEvent,
         model: str = None,
-        model_show: str = None
+        model_show: str = None,
     ):
         """能力: _设置在线机型 (API: /_set_model_show).
 
@@ -4308,14 +4252,14 @@ Returns:
         self,
         event: AstrMessageEvent,
         emoji_id: int,
-        message_id: int,
-        set: bool
+        set: bool,
+        message_id: int = None,
     ):
         """能力: 设置消息表情点赞 (API: /set_msg_emoji_like).
 
 Args:
     emoji_id(int): 必填，表情ID。
-    message_id(int): 必填，消息ID。
+    message_id(int): 可选，消息ID。默认使用当前消息 ID。
     set(bool): 必填，是否设置。
 
 Returns:
@@ -4323,8 +4267,7 @@ Returns:
         payload: dict = {}
         if emoji_id is not None:
             payload['emoji_id'] = emoji_id
-        if message_id is not None:
-            payload['message_id'] = message_id
+        payload['message_id'] = message_id
         if set is not None:
             payload['set'] = set
         return await self._call_napcat_api(event, 'set_msg_emoji_like', payload)
@@ -4337,7 +4280,7 @@ Returns:
         batteryStatus: int,
         ext_status: str,
         extStatus: int,
-        status: int
+        status: int,
     ):
         """能力: ## 状态列表 ### 在线 ```json5; { "status": 10, "ext_status": 0, "battery_status": 0; } ``` ### Q我吧 ```json5; { "status": 60, "ext_status": 0, "battery_status": 0; } ``` ### 离开 ```json5; { "status": 30, "ext_status": 0, "battery_status": 0; } ``` ### 忙碌 ```json5; { " (API: /set_online_status).
 
@@ -4367,7 +4310,7 @@ Returns:
     async def napcat_set_qq_avatar_tool(
         self,
         event: AstrMessageEvent,
-        file: str
+        file: str,
     ):
         """能力: 修改当前账号的QQ头像 (API: /set_qq_avatar).
 
@@ -4387,7 +4330,7 @@ Returns:
         event: AstrMessageEvent,
         nickname: str,
         personal_note: str = None,
-        sex: str = None
+        sex: str = None,
     ):
         """能力: 修改当前账号的昵称、个性签名等资料 (API: /set_qq_profile).
 
@@ -4411,7 +4354,7 @@ Returns:
     async def napcat_set_restart_tool(
         self,
         event: AstrMessageEvent,
-        delay: int = None
+        delay: int = None,
     ):
         """能力: 重启服务 (API: /set_restart).
 
@@ -4429,7 +4372,7 @@ Returns:
     async def napcat_set_self_longnick_tool(
         self,
         event: AstrMessageEvent,
-        longNick: str
+        longNick: str,
     ):
         """能力: 修改当前登录帐号的个性签名 (API: /set_self_longnick).
 
@@ -4447,7 +4390,7 @@ Returns:
     async def napcat_test_download_stream_tool(
         self,
         event: AstrMessageEvent,
-        error: bool = None
+        error: bool = None,
     ):
         """能力: 流式下载测试 (API: /test_download_stream).
 
@@ -4466,28 +4409,27 @@ Returns:
         self,
         event: AstrMessageEvent,
         file_id: str,
-        group_id: int
+        group_id: int = None,
     ):
         """能力: 传输群文件 (API: /trans_group_file).
 
 Args:
     file_id(str): 必填，文件ID。
-    group_id(int): 必填，群号。
+    group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
 
 Returns:
     str: 返回 API 响应的 JSON 字符串。"""
         payload: dict = {}
         if file_id is not None:
             payload['file_id'] = file_id
-        if group_id is not None:
-            payload['group_id'] = group_id
+        payload['group_id'] = group_id
         return await self._call_napcat_api(event, 'trans_group_file', payload)
 
     @filter.llm_tool(name='napcat_translate_en2zh')
     async def napcat_translate_en2zh_tool(
         self,
         event: AstrMessageEvent,
-        words: list
+        words: list,
     ):
         """能力: 将英文单词列表翻译为中文 (API: /translate_en2zh).
 
@@ -4504,7 +4446,7 @@ Returns:
     @filter.llm_tool(name='napcat_unknown')
     async def napcat_unknown_tool(
         self,
-        event: AstrMessageEvent
+        event: AstrMessageEvent,
     ):
         """能力: unknown (API: /unknown).
 
@@ -4524,7 +4466,7 @@ Returns:
         guild_id: str,
         name: str,
         role_id: str,
-        independent: bool = None
+        independent: bool = None,
     ):
         """能力: 修改频道角色 (API: /update_guild_role).
 
@@ -4564,7 +4506,7 @@ Returns:
         is_complete: bool = None,
         reset: bool = None,
         total_chunks: int = None,
-        verify_only: bool = None
+        verify_only: bool = None,
     ):
         """能力: 以流式方式上传文件数据到机器人 (API: /upload_file_stream).
 
@@ -4613,17 +4555,17 @@ Returns:
         self,
         event: AstrMessageEvent,
         file: str,
-        group_id: int,
         name: str,
         upload_file: bool,
+        group_id: int = None,
         folder: str = None,
-        folder_id: str = None
+        folder_id: str = None,
     ):
         """能力: 上传资源路径或URL指定的文件到指定群聊的文件系统中 (API: /upload_group_file).
 
 Args:
     file(str): 必填，资源路径或URL。
-    group_id(int): 必填，群号。
+    group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
     name(str): 必填，储存名称。
     upload_file(bool): 必填，是否执行上传。
     folder(str): 可选，文件夹ID（二选一）。
@@ -4634,8 +4576,7 @@ Returns:
         payload: dict = {}
         if file is not None:
             payload['file'] = file
-        if group_id is not None:
-            payload['group_id'] = group_id
+        payload['group_id'] = group_id
         if name is not None:
             payload['name'] = name
         if upload_file is not None:
@@ -4653,7 +4594,7 @@ Returns:
         album_id: str,
         album_name: str,
         file: str,
-        group_id: int
+        group_id: int = None,
     ):
         """能力: 上传图片到群相册 (API: /upload_image_to_qun_album).
 
@@ -4661,7 +4602,7 @@ Args:
     album_id(str): 必填，相册ID。
     album_name(str): 必填，相册名称。
     file(str): 必填，图片路径、URL或Base64。
-    group_id(int): 必填，群号。
+    group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
 
 Returns:
     str: 返回 API 响应的 JSON 字符串。"""
@@ -4672,8 +4613,7 @@ Returns:
             payload['album_name'] = album_name
         if file is not None:
             payload['file'] = file
-        if group_id is not None:
-            payload['group_id'] = group_id
+        payload['group_id'] = group_id
         return await self._call_napcat_api(event, 'upload_image_to_qun_album', payload)
 
     @filter.llm_tool(name='napcat_upload_private_file')
@@ -4683,7 +4623,7 @@ Returns:
         file: str,
         name: str,
         upload_file: bool,
-        user_id: int
+        user_id: int = None,
     ):
         """能力: 上传本地文件到指定私聊会话中 (API: /upload_private_file).
 
@@ -4691,7 +4631,7 @@ Args:
     file(str): 必填，资源路径或URL。
     name(str): 必填，文件名称。
     upload_file(bool): 必填，是否执行上传。
-    user_id(int): 必填，对方 QQ 号。
+    user_id(int): 可选，对方 QQ 号。默认使用当前消息发送者的用户 ID。
 
 Returns:
     str: 返回 API 响应的 JSON 字符串。"""
@@ -4702,6 +4642,5 @@ Returns:
             payload['name'] = name
         if upload_file is not None:
             payload['upload_file'] = upload_file
-        if user_id is not None:
-            payload['user_id'] = user_id
+        payload['user_id'] = user_id
         return await self._call_napcat_api(event, 'upload_private_file', payload)

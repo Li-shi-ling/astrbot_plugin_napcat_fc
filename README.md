@@ -25,6 +25,8 @@
 
 如果在私聊中调用需要群号的群聊工具，且没有显式提供 `group_id`，工具不会请求 NapCat API，而是返回 LLM 可读的 JSON 提示，说明当前消息不是群聊事件并要求提供群号或改用私聊工具。
 
+对于所有同时具有群号和用户号输入语义的工具，插件会在调用 NapCat 前统一归一化参数：未提供 `user_id` 时使用当前消息发送者；群聊中未提供 `group_id` 时使用当前群号；私聊中不会为可选群号强行补值。`target_id` 这类目标 QQ 别名会在存在 `user_id` 语义的工具中自动映射为 `user_id`，不会把 `target_id` 原样传给 NapCat。
+
 ## 配置
 
 当前版本使用显式 `@filter.llm_tool` 注册，不再通过配置开关动态增删全量工具。调用执行仍依赖当前消息事件是 aiocqhttp/NapCat 事件。
@@ -67,6 +69,8 @@ LLM 调用具体接口时使用对应工具，例如 `napcat_send_group_msg`：
 这些工具必须在 aiocqhttp/NapCat 消息事件上下文中使用；非 aiocqhttp 平台事件不会注入 NapCat 工具。
 
 获取信息类工具，例如 `napcat_get_login_info`、`napcat_get_group_info`、`napcat_fetch_custom_face`、`napcat_can_send_image`，返回值会作为工具结果交给 LLM 继续理解和组织回复，而不是由插件直接发送到聊天窗口。
+
+`napcat_send_poke`、`napcat_friend_poke` 和 `napcat_group_poke` 的 `target_id` 仅作为兼容别名使用，实际请求 NapCat 时会映射为 `user_id`，不会把 `target_id` 字段传给 NapCat。在群聊中省略 `group_id` 会默认使用当前群号；在私聊中省略 `group_id` 会按私聊戳一戳处理，群聊专用工具缺群号时会返回可读提示。
 
 ## 开发约束
 

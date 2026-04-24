@@ -184,7 +184,12 @@ async def test_endpoint_tool_calls_expected_endpoint():
     assert event.bot.api.calls == [
         (
             "send_group_msg",
-            {"group_id": 123, "message": "hello", "auto_escape": False},
+            {
+                "group_id": 123,
+                "message": "hello",
+                "auto_escape": False,
+                "user_id": 123456,
+            },
         )
     ]
 
@@ -237,7 +242,131 @@ async def test_group_tool_uses_current_group_when_group_id_is_omitted():
     assert event.bot.api.calls == [
         (
             "send_group_msg",
-            {"group_id": 654321, "message": "hello"},
+            {"group_id": 654321, "message": "hello", "user_id": 123456},
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_send_poke_maps_target_id_to_user_id_and_uses_current_group():
+    event = make_aiocqhttp_event(group_id="654321", user_id="123456")
+    plugin = NapCatFunctionToolsPlugin(context=None)
+
+    result = await plugin.napcat_send_poke_tool(event, target_id=3209552419)
+
+    assert '"status": "ok"' in result
+    assert event.bot.api.calls == [
+        (
+            "send_poke",
+            {"user_id": 3209552419, "group_id": 654321},
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_send_poke_defaults_to_current_sender_in_private_chat():
+    event = make_aiocqhttp_event(user_id="123456")
+    plugin = NapCatFunctionToolsPlugin(context=None)
+
+    result = await plugin.napcat_send_poke_tool(event)
+
+    assert '"status": "ok"' in result
+    assert event.bot.api.calls == [("send_poke", {"user_id": 123456})]
+
+
+@pytest.mark.asyncio
+async def test_friend_poke_maps_target_id_and_uses_current_group_when_available():
+    event = make_aiocqhttp_event(group_id="654321", user_id="123456")
+    plugin = NapCatFunctionToolsPlugin(context=None)
+
+    result = await plugin.napcat_friend_poke_tool(event, target_id=3209552419)
+
+    assert '"status": "ok"' in result
+    assert event.bot.api.calls == [
+        (
+            "friend_poke",
+            {"user_id": 3209552419, "group_id": 654321},
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_group_poke_maps_target_id_to_user_id_and_uses_current_group():
+    event = make_aiocqhttp_event(group_id="654321", user_id="123456")
+    plugin = NapCatFunctionToolsPlugin(context=None)
+
+    result = await plugin.napcat_group_poke_tool(event, target_id=3209552419)
+
+    assert '"status": "ok"' in result
+    assert event.bot.api.calls == [
+        (
+            "group_poke",
+            {"group_id": 654321, "user_id": 3209552419},
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_optional_group_and_user_params_are_filled_for_group_context():
+    event = make_aiocqhttp_event(group_id="654321", user_id="123456")
+    plugin = NapCatFunctionToolsPlugin(context=None)
+
+    result = await plugin.napcat_send_forward_msg_tool(
+        event,
+        message="hello",
+        messages=[],
+    )
+
+    assert '"status": "ok"' in result
+    assert event.bot.api.calls == [
+        (
+            "send_forward_msg",
+            {
+                "message": "hello",
+                "messages": [],
+                "group_id": 654321,
+                "user_id": 123456,
+            },
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_optional_group_and_user_params_only_fill_user_in_private_context():
+    event = make_aiocqhttp_event(user_id="123456")
+    plugin = NapCatFunctionToolsPlugin(context=None)
+
+    result = await plugin.napcat_send_forward_msg_tool(
+        event,
+        message="hello",
+        messages=[],
+    )
+
+    assert '"status": "ok"' in result
+    assert event.bot.api.calls == [
+        (
+            "send_forward_msg",
+            {"message": "hello", "messages": [], "user_id": 123456},
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_target_id_alias_is_normalized_before_calling_api():
+    event = make_aiocqhttp_event(group_id="654321", user_id="123456")
+    plugin = NapCatFunctionToolsPlugin(context=None)
+
+    result = await plugin._call_napcat_api(
+        event,
+        "friend_poke",
+        {"target_id": 3209552419},
+    )
+
+    assert '"status": "ok"' in result
+    assert event.bot.api.calls == [
+        (
+            "friend_poke",
+            {"user_id": 3209552419, "group_id": 654321},
         )
     ]
 
@@ -313,7 +442,7 @@ async def test_aiocqhttp_action_accepts_slash_endpoint():
 
     await plugin._call_napcat_api(event, "/send_msg", {"message": "hello"})
 
-    assert event.bot.api.calls == [("send_msg", {"message": "hello"})]
+    assert event.bot.api.calls == [("send_msg", {"message": "hello", "user_id": 123456})]
 
 
 def test_tool_name_keeps_internal_dot_endpoint_distinct():

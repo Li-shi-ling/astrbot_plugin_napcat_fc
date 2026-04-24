@@ -29,7 +29,7 @@ from napcat_fc.tool_registry import build_tool_registry_data
     "astrbot_plugin_napcat_fc",
     "Soulter / AstrBot contributors",
     "将 NapCat / OneBot / go-cqhttp API 注册为 AstrBot 函数工具。",
-    "1.14.2",
+    "1.14.5",
 )
 class NapCatFunctionToolsPlugin(Star):
     SEARCH_TOOL_NAME = "napcat_search_tools"
@@ -56,6 +56,7 @@ class NapCatFunctionToolsPlugin(Star):
         self.config = dict(config or {})
         self.tool_count = 182
         self.tool_registry_records = build_tool_registry_data(type(self))
+        self.action_parameter_names = self._build_action_parameter_names()
         self.napcat_tool_names = tuple(
             record.tool_name for record in self.tool_registry_records
         )
@@ -72,6 +73,20 @@ class NapCatFunctionToolsPlugin(Star):
         self.tool_registry_repo = ToolRegistryRepo(self.tool_db)
         self._debug_started_at = time.perf_counter()
         self._debug_last_at = self._debug_started_at
+
+    def _build_action_parameter_names(self) -> dict[str, set[str]]:
+        action_parameter_names: dict[str, set[str]] = {}
+        for record in self.tool_registry_records:
+            try:
+                params = json.loads(record.parameters_json)
+            except json.JSONDecodeError:
+                params = []
+            action_parameter_names[record.endpoint] = {
+                item["name"]
+                for item in params
+                if isinstance(item, dict) and item.get("name")
+            }
+        return action_parameter_names
 
     async def initialize(self):
         self._debug_log("initialize:start", tool_count=self.tool_count, db_path=self.db_path)
@@ -329,6 +344,7 @@ class NapCatFunctionToolsPlugin(Star):
         if not action:
             raise ValueError("endpoint must not be empty.")
         payload = dict(payload)
+        self._normalize_contextual_target_params(event, action, payload)
         missing_context = self._fill_context_defaults(event, payload)
         if missing_context:
             return json.dumps(
@@ -356,6 +372,39 @@ class NapCatFunctionToolsPlugin(Star):
         if self._is_information_action(action):
             return json.dumps(result, ensure_ascii=False, default=str)
         return json.dumps(result, ensure_ascii=False, default=str)
+
+    def _get_current_group_id_or_none(self, event: AstrMessageEvent):
+        if not isinstance(event, AiocqhttpMessageEvent):
+            return None
+        group_id = event.get_group_id()
+        if not group_id:
+            return None
+        return int(group_id) if str(group_id).isdigit() else group_id
+
+    def _normalize_contextual_target_params(
+        self,
+        event: AiocqhttpMessageEvent,
+        action: str,
+        payload: dict,
+    ) -> None:
+        parameter_names = self.action_parameter_names.get(action, set())
+        has_user_id = "user_id" in parameter_names
+        has_group_id = "group_id" in parameter_names
+
+        if has_user_id and payload.get("user_id") is None and "target_id" in payload:
+            target_id = payload.pop("target_id")
+            if target_id is not None:
+                payload["user_id"] = target_id
+        elif has_user_id and "target_id" in payload:
+            payload.pop("target_id", None)
+
+        if has_user_id and "user_id" not in payload:
+            payload["user_id"] = None
+
+        if has_group_id and "group_id" not in payload:
+            group_id = self._get_current_group_id_or_none(event)
+            if group_id is not None:
+                payload["group_id"] = group_id
 
     def _fill_context_defaults(
         self,
@@ -1287,18 +1336,20 @@ Returns:
         """能力: 在群聊或私聊中发送戳一戳动作 (API: /friend_poke).
 
 Args:
-    user_id(int): 可选，用户QQ。默认使用当前消息发送者的用户 ID。
-    group_id(int): 可选，群号。
-    target_id(int): 可选，目标QQ。
+    user_id(int): 可选，要戳的 QQ 号。默认使用当前消息发送者的用户 ID。
+    group_id(int): 可选，群号。默认使用当前群聊的群号；私聊中不传则按私聊戳一戳处理。
+    target_id(int): 可选，兼容别名，等同于 user_id；当 user_id 未提供时会作为要戳的 QQ 号。
 
 Returns:
     str: 返回 API 响应的 JSON 字符串。"""
         payload: dict = {}
+        if user_id is None and target_id is not None:
+            user_id = target_id
         payload['user_id'] = user_id
+        if group_id is None:
+            group_id = self._get_current_group_id_or_none(event)
         if group_id is not None:
             payload['group_id'] = group_id
-        if target_id is not None:
-            payload['target_id'] = target_id
         return await self._call_napcat_api(event, 'friend_poke', payload)
 
     @filter.llm_tool(name='napcat_get_ai_characters')
@@ -2651,16 +2702,16 @@ Returns:
 
 Args:
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
-    user_id(int): 可选，用户QQ。默认使用当前消息发送者的用户 ID。
-    target_id(int): 可选，目标QQ。
+    user_id(int): 可选，要戳的 QQ 号。默认使用当前消息发送者的用户 ID。
+    target_id(int): 可选，兼容别名，等同于 user_id；当 user_id 未提供时会作为要戳的 QQ 号。
 
 Returns:
     str: 返回 API 响应的 JSON 字符串。"""
         payload: dict = {}
+        if user_id is None and target_id is not None:
+            user_id = target_id
         payload['group_id'] = group_id
         payload['user_id'] = user_id
-        if target_id is not None:
-            payload['target_id'] = target_id
         return await self._call_napcat_api(event, 'group_poke', payload)
 
     @filter.llm_tool(name='napcat_mark_all_as_read')
@@ -3470,18 +3521,20 @@ Returns:
         """能力: 在群聊或私聊中发送戳一戳动作 (API: /send_poke).
 
 Args:
-    user_id(int): 可选，不填则为私聊戳。默认使用当前消息发送者的用户 ID。
-    group_id(int): 可选，不填则为私聊戳。
-    target_id(int): 可选，不填则为私聊戳。
+    user_id(int): 可选，要戳的 QQ 号。默认使用当前消息发送者的用户 ID。
+    group_id(int): 可选，群号。默认使用当前群聊的群号；私聊中不传则按私聊戳一戳处理。
+    target_id(int): 可选，兼容别名，等同于 user_id；当 user_id 未提供时会作为要戳的 QQ 号。
 
 Returns:
     str: 返回 API 响应的 JSON 字符串。"""
         payload: dict = {}
+        if user_id is None and target_id is not None:
+            user_id = target_id
         payload['user_id'] = user_id
+        if group_id is None:
+            group_id = self._get_current_group_id_or_none(event)
         if group_id is not None:
             payload['group_id'] = group_id
-        if target_id is not None:
-            payload['target_id'] = target_id
         return await self._call_napcat_api(event, 'send_poke', payload)
 
     @filter.llm_tool(name='napcat_send_private_forward_msg')

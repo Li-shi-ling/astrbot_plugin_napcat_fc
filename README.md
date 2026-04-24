@@ -1,11 +1,11 @@
 # NapCat 函数工具
 
-这是一个 AstrBot 插件，用于把本地文档中的 NapCat / OneBot API 批量注册为可供 LLM 调用的函数工具。工具执行时复用 AstrBot 的 `AiocqhttpMessageEvent`，通过当前 aiocqhttp/NapCat 连接调用 `call_action`，不额外实现 HTTP 客户端。
+这是一个 AstrBot 插件，用于把本地文档中的 NapCat / OneBot API 注册为可供 LLM 调用的函数工具。每个接口都按 `@filter.llm_tool` 装饰器格式显式注册，便于后续做工具发现相关改造。
 
 ## 功能
 
-- 自动扫描 `docs/napcat-apifox` 中的 OpenAPI Markdown 文档。
-- 为每个发现到的接口注册一个函数工具，工具名格式为 `napcat_<接口名>`。
+- 基于 `docs/napcat-apifox`、`docs/onebot-11/api` 和 `docs/go-cqhttp/api` 生成工具定义。
+- 每个发现到的接口都有一个显式 `@filter.llm_tool` 方法，工具名格式为 `napcat_<接口名>`。
 - 额外提供通用工具 `napcat_call_api`，用于调用未单独命名或临时新增的接口。
 - 复用 AstrBot 默认接入 NapCat 的 aiocqhttp 事件和 bot 实例。
 
@@ -13,9 +13,7 @@
 
 在 AstrBot 插件配置中设置：
 
-- `tool_prefix`：函数工具名前缀，默认 `napcat`。
-- `register_tools`：是否注册函数工具。
-- `enable_generic_tool`：是否注册通用调用工具。
+当前版本使用显式 `@filter.llm_tool` 注册，不再通过配置开关动态增删工具。调用执行仍依赖当前消息事件是 aiocqhttp/NapCat 事件。
 
 ## 使用方式
 

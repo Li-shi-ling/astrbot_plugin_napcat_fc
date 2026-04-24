@@ -1,17 +1,1 @@
-{
-  "tool_prefix": {
-    "type": "string",
-    "description": "注册给 LLM 的函数工具名前缀",
-    "default": "napcat"
-  },
-  "register_tools": {
-    "type": "bool",
-    "description": "是否在插件加载时注册 NapCat 函数工具",
-    "default": true
-  },
-  "enable_generic_tool": {
-    "type": "bool",
-    "description": "是否额外注册通用调用工具 napcat_call_api",
-    "default": true
-  }
-}
+{}

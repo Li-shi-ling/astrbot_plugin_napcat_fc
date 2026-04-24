@@ -4,10 +4,6 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from astrbot.api import FunctionTool
-
-from napcat_fc.tools import build_endpoint_tool
-
 
 @dataclass(frozen=True)
 class EndpointSpec:
@@ -76,21 +72,6 @@ def discover_markdown_heading_specs(docs_dir: Path) -> list[EndpointSpec]:
                 source=str(path),
             )
     return sorted(specs_by_endpoint.values(), key=lambda spec: spec.endpoint.lower())
-
-
-def build_endpoint_tools(
-    specs: list[EndpointSpec],
-    tool_prefix: str = "napcat",
-) -> list[FunctionTool]:
-    names: set[str] = set()
-    tools: list[FunctionTool] = []
-    for spec in specs:
-        tool_name = make_tool_name(tool_prefix, spec.endpoint)
-        if tool_name in names:
-            tool_name = f"{tool_name}_{abs(hash(spec.endpoint)) % 10000}"
-        names.add(tool_name)
-        tools.append(build_endpoint_tool(spec=spec, tool_name=tool_name))
-    return tools
 
 
 def make_tool_name(prefix: str, endpoint: str) -> str:

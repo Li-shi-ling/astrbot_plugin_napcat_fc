@@ -588,6 +588,23 @@ def test_search_scoring_supports_legacy_repo_without_public_score_method():
     assert plugin._combined_search_score(record, "群 信息", ["群", "信息"]) > 0
 
 
+def test_search_candidate_limit_uses_config_with_default_and_minimum():
+    plugin = NapCatFunctionToolsPlugin(context=FakeContext([]))
+    assert plugin._get_search_candidate_limit() == 10
+
+    plugin.config["search_candidate_limit"] = 5
+    assert plugin._get_search_candidate_limit() == 5
+
+    plugin.config["search_candidate_limit"] = "2"
+    assert plugin._get_search_candidate_limit() == 2
+
+    plugin.config["search_candidate_limit"] = 0
+    assert plugin._get_search_candidate_limit() == 1
+
+    plugin.config["search_candidate_limit"] = "invalid"
+    assert plugin._get_search_candidate_limit() == 10
+
+
 @pytest.mark.asyncio
 async def test_on_llm_request_injects_discovered_tools_as_request_scope_copies():
     source_tool = make_function_tool("napcat_send_group_msg", active=False)
@@ -704,7 +721,10 @@ async def test_search_tool_splits_terms_and_skips_already_discovered_candidates(
         "napcat_send_group_msg",
     }
     tools = [make_function_tool(tool_name, active=False) for tool_name in tool_names]
-    plugin = NapCatFunctionToolsPlugin(context=FakeContext(tools))
+    plugin = NapCatFunctionToolsPlugin(
+        context=FakeContext(tools),
+        config={"search_candidate_limit": 4},
+    )
     db_path = (
         Path(__file__).resolve().parents[1]
         / f".test-split-search-tools-{uuid.uuid4().hex}.db"
@@ -732,7 +752,7 @@ async def test_search_tool_splits_terms_and_skips_already_discovered_candidates(
         matched_names = [tool["name"] for tool in payload["matched_tools"]]
 
         assert payload["search_terms"] == ["group", "info"]
-        assert payload["candidate_limit"] == 10
+        assert payload["candidate_limit"] == 4
         assert "napcat_get_group_info" in payload["skipped_discovered_tools"]
         assert "napcat_get_group_info" not in matched_names
         assert 1 <= len(matched_names) <= 3

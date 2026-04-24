@@ -10,7 +10,7 @@
 - 复用 AstrBot 默认接入 NapCat 的 `AiocqhttpMessageEvent` 和当前事件的 `event.bot.api.call_action`，不自建 HTTP 客户端。
 - 初始化时创建工具管理数据库 `napcat_fc_tools.db`，记录工具名、API、能力、参数、平台限制和启用状态，供动态工具发现使用。
 - NapCat 工具默认不作为全局 active 工具常驻暴露，而是在 `on_llm_request(priority=-100)` 阶段按搜索发现结果和数据库状态注入到当前请求。
-- `napcat_search_tools` 搜索工具会一直注入到 aiocqhttp/NapCat 请求中。它支持空格分词并发搜索，先合并综合相关度最高的 10 个候选，再排除已发现工具，将剩余最相关的前 3 个工具加入持久化发现队列，并立即注入当前请求后续工具调用。
+- `napcat_search_tools` 搜索工具会一直注入到 aiocqhttp/NapCat 请求中。它支持空格分词并发搜索，先合并综合相关度最高的一批候选，再排除已发现工具，将剩余最相关的前 3 个工具加入持久化发现队列，并立即注入当前请求后续工具调用。
 - 仅系统专属工具名记录在插件类属性 `WINDOWS_TOOL_NAMES`、`LINUX_TOOL_NAMES`、`MAC_TOOL_NAMES` 中；当前只有 OCR 工具属于 Windows 专属。
 - 信息获取类接口会通过函数 `return` 把 NapCat API 响应返回给 LLM，不直接向当前聊天发送消息。
 
@@ -35,9 +35,11 @@
 
 工具管理数据库位于 AstrBot 插件数据目录，表名为 `napcat_tool`。插件启动时会按当前 `main.py` 中的工具定义同步记录，保留已有 `enabled` 状态并移除已不存在的工具。外部工具发现逻辑可以读取 `enabled`、`parameters_json`、`required_parameters_json` 和 `platforms_json` 字段进行筛选。
 
-搜索发现队列持久化在 `napcat_discovered_tool` 表中，最多保存 20 个工具。重复搜索到同一工具时会去重并刷新到队尾；超过 20 个时按 FIFO 队列出队。搜索工具每次会先取 10 个候选并跳过已发现工具，避免高相关旧工具长期占住前三名。已发现工具会在后续请求直接注入，不需要再次做数据库搜索。
+搜索发现队列持久化在 `napcat_discovered_tool` 表中，最多保存 20 个工具。重复搜索到同一工具时会去重并刷新到队尾；超过 20 个时按 FIFO 队列出队。搜索工具每次会先取 `search_candidate_limit` 个候选并跳过已发现工具，默认值为 10，避免高相关旧工具长期占住前三名。已发现工具会在后续请求直接注入，不需要再次做数据库搜索。
 
 如需临时关闭动态注入，可在插件配置中设置 `dynamic_injection_enabled: false`。此时请求阶段仍会先卸载本轮请求里已有的 NapCat 工具，但不会再注入新的 NapCat 工具。
+
+如需调整搜索候选池大小，可在插件配置中设置 `search_candidate_limit`，默认 `10`，最小有效值为 `1`。
 
 如需排查动态注入、搜索或数据库同步流程，可在插件配置中设置 `debug: true`。开启后插件会使用 AstrBot 提供的 `logger.debug` 输出关键运行节点日志。调试日志包含 `elapsed_ms` 和 `delta_ms`，用于定位搜索、数据库读取、工具注入等性能瓶颈。
 

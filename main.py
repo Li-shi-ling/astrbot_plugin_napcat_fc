@@ -31,7 +31,7 @@ from napcat_fc.tool_registry import build_tool_registry_data
     "astrbot_plugin_napcat_fc",
     "Soulter / AstrBot contributors",
     "将 NapCat / OneBot / go-cqhttp API 注册为 AstrBot 函数工具。",
-    "1.14.7",
+    "1.14.8",
 )
 class NapCatFunctionToolsPlugin(Star):
     SEARCH_TOOL_NAME = "napcat_search_tools"
@@ -198,7 +198,12 @@ class NapCatFunctionToolsPlugin(Star):
                 event_type=type(event).__name__,
             )
             search_terms = self._build_search_terms(keyword)
-            candidate_records = await self._search_tool_candidates(keyword, search_terms)
+            candidate_limit = self._get_search_candidate_limit()
+            candidate_records = await self._search_tool_candidates(
+                keyword,
+                search_terms,
+                candidate_limit,
+            )
             platform_records = [
                 record
                 for record in candidate_records
@@ -222,6 +227,7 @@ class NapCatFunctionToolsPlugin(Star):
                 "search_tool:matched",
                 keyword=keyword,
                 search_terms=search_terms,
+                candidate_limit=candidate_limit,
                 candidate_count=len(candidate_records),
                 platform_candidate_count=len(platform_records),
                 skipped_discovered_count=len(skipped_discovered_names),
@@ -246,7 +252,7 @@ class NapCatFunctionToolsPlugin(Star):
                 {
                     "keyword": keyword,
                     "search_terms": search_terms,
-                    "candidate_limit": self.SEARCH_CANDIDATE_LIMIT,
+                    "candidate_limit": candidate_limit,
                     "matched_tools": [
                         {
                             "name": record.tool_name,
@@ -278,7 +284,7 @@ class NapCatFunctionToolsPlugin(Star):
             ],
             desc=(
                 "能力: 在 NapCat/OneBot/go-cqhttp 工具库中按关键词模糊搜索工具，"
-                "支持空格分词并发查询，会先取综合相关度最高的 10 个候选，"
+                "支持空格分词并发查询，会先取综合相关度最高的一批候选，"
                 "再排除已经发现过的工具，将剩余最相关的前 3 个工具加入持久化发现队列，"
                 "并立即注入本轮请求。"
                 "可搜索的能力大类包括: 消息发送与撤回、群消息和私聊消息、"
@@ -305,14 +311,27 @@ class NapCatFunctionToolsPlugin(Star):
                 terms.extend(part for part in term.split("_") if len(part) >= 2)
         return list(dict.fromkeys(terms))
 
-    async def _search_tool_candidates(self, keyword: str, terms: list[str]):
+    def _get_search_candidate_limit(self) -> int:
+        raw_limit = self.config.get("search_candidate_limit", self.SEARCH_CANDIDATE_LIMIT)
+        try:
+            limit = int(raw_limit)
+        except (TypeError, ValueError):
+            return self.SEARCH_CANDIDATE_LIMIT
+        return max(1, limit)
+
+    async def _search_tool_candidates(
+        self,
+        keyword: str,
+        terms: list[str],
+        candidate_limit: int,
+    ):
         if not terms:
             return []
 
         search_tasks = [
             self.tool_registry_repo.search_tools(
                 term,
-                limit=self.SEARCH_CANDIDATE_LIMIT,
+                limit=candidate_limit,
                 enabled_only=True,
             )
             for term in terms
@@ -329,7 +348,7 @@ class NapCatFunctionToolsPlugin(Star):
                 -self._combined_search_score(record, keyword, terms),
                 record.tool_name,
             ),
-        )[: self.SEARCH_CANDIDATE_LIMIT]
+        )[:candidate_limit]
 
     def _combined_search_score(self, record, keyword: str, terms: list[str]) -> int:
         full_keyword = keyword.strip().lower()

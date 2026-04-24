@@ -23,6 +23,8 @@
 
 如需临时关闭动态注入，可在插件配置中设置 `dynamic_injection_enabled: false`。此时请求阶段仍会先卸载本轮请求里已有的 NapCat 工具，但不会再注入新的 NapCat 工具。
 
+如需排查动态注入、搜索或数据库同步流程，可在插件配置中设置 `debug: true`。开启后插件会使用 AstrBot 提供的 `logger.debug` 输出关键运行节点日志；正常使用建议保持关闭。
+
 ## 使用方式
 
 LLM 调用具体接口时使用对应工具，例如 `napcat_send_group_msg`：

@@ -296,6 +296,21 @@ def test_deactivate_registered_napcat_tools_marks_global_tools_inactive():
     assert other_tool.active is True
 
 
+def test_debug_log_is_gated_by_config(monkeypatch):
+    captured = []
+    monkeypatch.setattr("main.logger.debug", captured.append)
+    plugin = NapCatFunctionToolsPlugin(context=FakeContext([]), config={"debug": False})
+
+    plugin._debug_log("test_node", value=1)
+    assert captured == []
+
+    plugin.config["debug"] = True
+    plugin._debug_log("test_node", value=1)
+    assert captured
+    assert "test_node" in captured[0]
+    assert '"value": 1' in captured[0]
+
+
 @pytest.mark.asyncio
 async def test_on_llm_request_injects_discovered_tools_as_request_scope_copies():
     source_tool = make_function_tool("napcat_send_group_msg", active=False)

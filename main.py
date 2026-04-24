@@ -21,7 +21,7 @@ from napcat_fc.tool_registry import build_tool_registry_data
     "astrbot_plugin_napcat_fc",
     "Soulter / AstrBot contributors",
     "将 NapCat / OneBot / go-cqhttp API 注册为 AstrBot 函数工具。",
-    "1.10.0",
+    "1.11.0",
 )
 class NapCatFunctionToolsPlugin(Star):
     SEARCH_TOOL_NAME = "napcat_search_tools"
@@ -49,16 +49,25 @@ class NapCatFunctionToolsPlugin(Star):
         self.tool_registry_repo = ToolRegistryRepo(self.tool_db)
 
     async def initialize(self):
+        self._debug_log("initialize:start", tool_count=self.tool_count, db_path=self.db_path)
         await self.tool_db.init_db()
+        self._debug_log("initialize:db_ready")
         await self.tool_registry_repo.sync_tools(self.tool_registry_records)
+        self._debug_log(
+            "initialize:tool_registry_synced",
+            record_count=len(self.tool_registry_records),
+        )
         self._deactivate_registered_napcat_tools()
         logger.info(
             f"NapCat 函数工具已初始化：{self.tool_count} 个，"
             f"工具管理数据库已同步：{len(self.tool_registry_records)} 个。"
         )
+        self._debug_log("initialize:done")
 
     async def terminate(self):
+        self._debug_log("terminate:start")
         await self.tool_db.close()
+        self._debug_log("terminate:db_closed")
         return None
 
     @filter.on_llm_request(priority=-100)
@@ -66,24 +75,34 @@ class NapCatFunctionToolsPlugin(Star):
         self, event: AstrMessageEvent, req: ProviderRequest
     ):
         """在 LLM 请求阶段按工具管理数据库动态注入 NapCat 工具。"""
+        self._debug_log("llm_request:start")
         self._unload_request_scope_napcat_tools(req)
         self._ensure_request_tool_set(req)
         req.func_tool.add_tool(self._build_search_tool(req))
+        self._debug_log("llm_request:search_tool_injected")
         if self.config.get("dynamic_injection_enabled", True) is False:
+            self._debug_log("llm_request:dynamic_injection_disabled")
             return
 
         discovered_tool_names = await self.tool_registry_repo.list_discovered_tool_names()
+        self._debug_log(
+            "llm_request:discovered_queue_loaded",
+            discovered_count=len(discovered_tool_names),
+        )
         injected_count = self._inject_tool_names_into_request(req, discovered_tool_names)
         if injected_count:
             logger.debug(f"本轮 LLM 请求注入已发现 NapCat 工具：{injected_count} 个。")
+        self._debug_log("llm_request:done", injected_count=injected_count)
 
     def _ensure_request_tool_set(self, req: ProviderRequest):
         if req.func_tool is None:
             req.func_tool = ToolSet()
+            self._debug_log("request_tool_set:created")
 
     def _inject_tool_names_into_request(
         self, req: ProviderRequest, tool_names: list[str]
     ) -> int:
+        self._debug_log("inject_tools:start", requested_count=len(tool_names))
         self._ensure_request_tool_set(req)
         tool_mgr = self.context.get_llm_tool_manager()
         injected_count = 0
@@ -98,6 +117,8 @@ class NapCatFunctionToolsPlugin(Star):
             request_tool.active = True
             req.func_tool.add_tool(request_tool)
             injected_count += 1
+            self._debug_log("inject_tools:tool_injected", tool_name=tool_name)
+        self._debug_log("inject_tools:done", injected_count=injected_count)
         return injected_count
 
     def _build_search_tool(self, req: ProviderRequest):
@@ -106,19 +127,33 @@ class NapCatFunctionToolsPlugin(Star):
             keyword: str,
         ) -> str:
             """按关键词搜索 NapCat 工具，并立即注入本轮请求。"""
+            self._debug_log("search_tool:start", keyword=keyword)
             records = await self.tool_registry_repo.search_tools(
                 keyword,
                 limit=self.SEARCH_RESULT_LIMIT,
                 enabled_only=True,
             )
             matched_names = [record.tool_name for record in records]
+            self._debug_log(
+                "search_tool:matched",
+                keyword=keyword,
+                matched_count=len(matched_names),
+                matched_tools=matched_names,
+            )
             queue = await self.tool_registry_repo.add_discovered_tool_names(
                 matched_names,
                 max_size=self.DISCOVERED_TOOL_LIMIT,
             )
+            self._debug_log(
+                "search_tool:queue_updated",
+                queue_count=len(queue),
+            )
             injected_count = 0
             if self.config.get("dynamic_injection_enabled", True) is not False:
                 injected_count = self._inject_tool_names_into_request(req, matched_names)
+            else:
+                self._debug_log("search_tool:dynamic_injection_disabled")
+            self._debug_log("search_tool:done", injected_count=injected_count)
             return json.dumps(
                 {
                     "keyword": keyword,
@@ -156,18 +191,37 @@ class NapCatFunctionToolsPlugin(Star):
 
     def _deactivate_registered_napcat_tools(self):
         if self.context is None:
+            self._debug_log("global_tools_deactivate:skip_no_context")
             return
         tool_mgr = self.context.get_llm_tool_manager()
         tool_names = set(self.napcat_tool_names)
+        deactivated_count = 0
         for tool in tool_mgr.func_list:
             if tool.name in tool_names:
                 tool.active = False
+                deactivated_count += 1
+        self._debug_log(
+            "global_tools_deactivate:done",
+            deactivated_count=deactivated_count,
+        )
 
     def _unload_request_scope_napcat_tools(self, req: ProviderRequest | None):
         if req is None or req.func_tool is None:
+            self._debug_log("request_tools_unload:skip_empty_request")
             return
+        before_count = len(req.func_tool.tools)
         for tool_name in self.napcat_tool_names:
             req.func_tool.remove_tool(tool_name)
+        removed_count = before_count - len(req.func_tool.tools)
+        self._debug_log("request_tools_unload:done", removed_count=removed_count)
+
+    def _debug_log(self, node: str, **fields):
+        if self.config.get("debug", False) is not True:
+            return
+        detail = ""
+        if fields:
+            detail = " " + json.dumps(fields, ensure_ascii=False, default=str)
+        logger.debug(f"[NapCatFC] {node}{detail}")
 
     async def _call_napcat_api(
         self,

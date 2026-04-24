@@ -1,4 +1,10 @@
 {
+  "debug": {
+    "description": "是否启用调试日志。开启后插件运行到的关键节点会通过 AstrBot logger.debug 输出。",
+    "type": "bool",
+    "hint": "排查工具搜索、动态注入、数据库同步问题时开启；正常使用建议关闭。",
+    "default": false
+  },
   "dynamic_injection_enabled": {
     "description": "是否在 LLM 请求阶段注入已发现的 NapCat 工具。关闭后仍保留搜索工具，但不会注入已发现工具。",
     "type": "bool",

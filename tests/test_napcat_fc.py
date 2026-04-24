@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import re
+import uuid
 from pathlib import Path
 
 import pytest
@@ -14,7 +16,9 @@ from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import (
 )
 
 from main import NapCatFunctionToolsPlugin
+from napcat_fc.db import ToolDBManager, ToolRegistryRepo
 from napcat_fc.registry import discover_all_endpoint_specs, discover_endpoint_specs, make_tool_name
+from napcat_fc.tool_registry import build_tool_registry_data
 
 
 class FakeApi:
@@ -166,3 +170,62 @@ async def test_aiocqhttp_action_accepts_slash_endpoint():
 def test_tool_name_keeps_internal_dot_endpoint_distinct():
     assert make_tool_name("napcat", ".ocr_image") == "napcat_dot_ocr_image"
     assert make_tool_name("napcat", "ocr_image") == "napcat_ocr_image"
+
+
+def test_build_tool_registry_data_extracts_tool_discovery_metadata():
+    records = build_tool_registry_data(NapCatFunctionToolsPlugin)
+    by_name = {record.tool_name: record for record in records}
+
+    assert len(records) == 182
+    assert by_name["napcat_send_group_msg"].endpoint == "send_group_msg"
+    assert by_name["napcat_send_group_msg"].method_name == "napcat_send_group_msg_tool"
+    assert "发送群消息" in by_name["napcat_send_group_msg"].capability
+
+    params = json.loads(by_name["napcat_send_group_msg"].parameters_json)
+    param_names = {param["name"] for param in params}
+    assert {"group_id", "message", "auto_escape"}.issubset(param_names)
+    assert {"group_id", "message"}.issubset(
+        json.loads(by_name["napcat_send_group_msg"].required_parameters_json)
+    )
+    assert json.loads(by_name["napcat_dot_ocr_image"].platforms_json) == ["windows"]
+    assert json.loads(by_name["napcat_get_login_info"].platforms_json) == []
+
+
+@pytest.mark.asyncio
+async def test_tool_registry_repo_roundtrip():
+    records = build_tool_registry_data(NapCatFunctionToolsPlugin)[:3]
+    db_path = (
+        Path(__file__).resolve().parents[1]
+        / f".test-tool-registry-{uuid.uuid4().hex}.db"
+    )
+    db = ToolDBManager(str(db_path))
+    repo = ToolRegistryRepo(db)
+
+    await db.init_db()
+    try:
+        assert await repo.replace_all_tools(records) == 3
+        all_tools = await repo.list_tools()
+        assert [record.tool_name for record in all_tools] == sorted(
+            record.tool_name for record in records
+        )
+
+        target_name = records[0].tool_name
+        target = await repo.get_tool(target_name)
+        assert target is not None
+        assert target.endpoint == records[0].endpoint
+
+        assert await repo.set_tool_enabled(target_name, False) is True
+        enabled_tools = await repo.list_tools(enabled_only=True)
+        assert target_name not in {record.tool_name for record in enabled_tools}
+        assert await repo.set_tool_enabled("missing_tool", False) is False
+
+        assert await repo.sync_tools(records) == 3
+        target = await repo.get_tool(target_name)
+        assert target is not None
+        assert target.enabled is False
+    finally:
+        await db.close()
+        for suffix in ("", "-wal", "-shm"):
+            path = Path(str(db_path) + suffix)
+            if path.exists():
+                path.unlink()

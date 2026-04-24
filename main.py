@@ -1,20 +1,24 @@
 ﻿from __future__ import annotations
 
 import json
+import os
 
 from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent, filter
-from astrbot.api.star import Context, Star, register
+from astrbot.api.star import Context, Star, StarTools, register
 from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import (
     AiocqhttpMessageEvent,
 )
+
+from napcat_fc.db import ToolDBManager, ToolRegistryRepo
+from napcat_fc.tool_registry import build_tool_registry_data
 
 
 @register(
     "astrbot_plugin_napcat_fc",
     "Soulter / AstrBot contributors",
     "将 NapCat / OneBot / go-cqhttp API 注册为 AstrBot 函数工具。",
-    "1.7.0",
+    "1.8.0",
 )
 class NapCatFunctionToolsPlugin(Star):
     WINDOWS_TOOL_NAMES = (
@@ -28,11 +32,23 @@ class NapCatFunctionToolsPlugin(Star):
         super().__init__(context)
         self.config = dict(config or {})
         self.tool_count = 182
+        self.storage_dir = str(StarTools.get_data_dir())
+        os.makedirs(self.storage_dir, exist_ok=True)
+        self.db_path = os.path.join(self.storage_dir, "napcat_fc_tools.db")
+        self.tool_db = ToolDBManager(db_path=self.db_path)
+        self.tool_registry_repo = ToolRegistryRepo(self.tool_db)
 
     async def initialize(self):
-        logger.info(f"NapCat 函数工具已初始化：{self.tool_count} 个。")
+        await self.tool_db.init_db()
+        records = build_tool_registry_data(type(self))
+        await self.tool_registry_repo.sync_tools(records)
+        logger.info(
+            f"NapCat 函数工具已初始化：{self.tool_count} 个，"
+            f"工具管理数据库已同步：{len(records)} 个。"
+        )
 
     async def terminate(self):
+        await self.tool_db.close()
         return None
 
     async def _call_napcat_api(
@@ -4442,5 +4458,3 @@ Returns:
         if user_id is not None:
             payload['user_id'] = user_id
         return await self._call_napcat_api(event, 'upload_private_file', payload)
-
-

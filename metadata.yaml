@@ -1,6 +1,6 @@
 name: astrbot_plugin_napcat_fc
 display_name: NapCat 函数工具
 desc: 将 NapCat / OneBot HTTP API 批量注册为 AstrBot 可供 LLM 调用的函数工具。
-version: v1.7.2
+version: v1.8.0
 author: Soulter / AstrBot contributors
 repo: https://github.com/Soulter/helloworld

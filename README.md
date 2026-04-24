@@ -28,6 +28,8 @@
 
 当前版本使用显式 `@filter.llm_tool` 注册，不再通过配置开关动态增删全量工具。调用执行仍依赖当前消息事件是 aiocqhttp/NapCat 事件。
 
+插件加载时会自动把当前插件目录加入 Python 模块搜索路径，确保 AstrBot 从项目根目录或插件管理器加载 `main.py` 时也能找到内部包 `napcat_fc`。
+
 工具管理数据库位于 AstrBot 插件数据目录，表名为 `napcat_tool`。插件启动时会按当前 `main.py` 中的工具定义同步记录，保留已有 `enabled` 状态并移除已不存在的工具。外部工具发现逻辑可以读取 `enabled`、`parameters_json`、`required_parameters_json` 和 `platforms_json` 字段进行筛选。
 
 搜索发现队列持久化在 `napcat_discovered_tool` 表中，最多保存 20 个工具。重复搜索到同一工具时会去重并刷新到队尾；超过 20 个时按 FIFO 队列出队。已发现工具会在后续请求直接注入，不需要再次做数据库搜索。

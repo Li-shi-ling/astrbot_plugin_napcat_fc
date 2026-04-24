@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess
+import sys
 import uuid
 from pathlib import Path
 
@@ -124,6 +126,35 @@ def test_main_registers_explicit_llm_tool_decorators():
     assert "payload" not in send_group_signature
     assert "group_id: " in source
     assert "message: " in source
+
+
+def test_main_can_load_internal_package_from_astrbot_root():
+    plugin_dir = Path(__file__).resolve().parents[1]
+    main_path = plugin_dir / "main.py"
+    script = f"""
+import importlib.util
+import sys
+from pathlib import Path
+
+plugin_dir = Path(r"{plugin_dir}")
+main_path = Path(r"{main_path}")
+sys.path = [path for path in sys.path if path != str(plugin_dir)]
+spec = importlib.util.spec_from_file_location("isolated_napcat_plugin", main_path)
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+assert module.NapCatFunctionToolsPlugin.__name__ == "NapCatFunctionToolsPlugin"
+assert str(plugin_dir) in sys.path
+"""
+
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=plugin_dir.parent.parent.parent,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
 
 
 def test_platform_tool_name_class_attributes_only_record_os_specific_tools():

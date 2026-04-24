@@ -10,12 +10,15 @@
 - 仅系统专属工具名记录在插件类属性 `WINDOWS_TOOL_NAMES`、`LINUX_TOOL_NAMES`、`MAC_TOOL_NAMES` 中；当前只有 OCR 工具属于 Windows 专属。
 - 复用 AstrBot 默认接入 NapCat 的 aiocqhttp 事件和 bot 实例。
 - 初始化时创建工具管理数据库 `napcat_fc_tools.db`，记录工具名、API、能力、字段参数、平台限制和启用状态，便于后续动态工具发现。
+- NapCat 工具默认不作为全局 active 工具常驻暴露，而是在 `on_llm_request(priority=-100)` 阶段按数据库 `enabled` 状态注入到本轮请求，注入前会先卸载本轮请求里已有的 NapCat 工具。
 
 ## 配置
 
 当前版本使用显式 `@filter.llm_tool` 注册，不再通过配置开关动态增删工具。调用执行仍依赖当前消息事件是 aiocqhttp/NapCat 事件。
 
 工具管理数据库位于 AstrBot 插件数据目录，表名为 `napcat_tool`。插件启动时会按当前 `main.py` 中的工具定义同步记录，保留已有 `enabled` 状态并移除已不存在的工具。外部工具发现逻辑可以读取 `enabled`、`parameters_json`、`required_parameters_json` 和 `platforms_json` 字段进行筛选。
+
+如需临时关闭动态注入，可在插件配置中设置 `dynamic_injection_enabled: false`。此时请求阶段仍会先卸载本轮请求里已有的 NapCat 工具，但不会再注入新的 NapCat 工具。
 
 ## 使用方式
 

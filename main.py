@@ -1,11 +1,14 @@
 ﻿from __future__ import annotations
 
+import copy
 import json
 import os
 
 from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent, filter
+from astrbot.api.provider import ProviderRequest
 from astrbot.api.star import Context, Star, StarTools, register
+from astrbot.core.agent.tool import ToolSet
 from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import (
     AiocqhttpMessageEvent,
 )
@@ -18,7 +21,7 @@ from napcat_fc.tool_registry import build_tool_registry_data
     "astrbot_plugin_napcat_fc",
     "Soulter / AstrBot contributors",
     "将 NapCat / OneBot / go-cqhttp API 注册为 AstrBot 函数工具。",
-    "1.8.0",
+    "1.9.0",
 )
 class NapCatFunctionToolsPlugin(Star):
     WINDOWS_TOOL_NAMES = (
@@ -32,6 +35,10 @@ class NapCatFunctionToolsPlugin(Star):
         super().__init__(context)
         self.config = dict(config or {})
         self.tool_count = 182
+        self.tool_registry_records = build_tool_registry_data(type(self))
+        self.napcat_tool_names = tuple(
+            record.tool_name for record in self.tool_registry_records
+        )
         self.storage_dir = str(StarTools.get_data_dir())
         os.makedirs(self.storage_dir, exist_ok=True)
         self.db_path = os.path.join(self.storage_dir, "napcat_fc_tools.db")
@@ -40,16 +47,64 @@ class NapCatFunctionToolsPlugin(Star):
 
     async def initialize(self):
         await self.tool_db.init_db()
-        records = build_tool_registry_data(type(self))
-        await self.tool_registry_repo.sync_tools(records)
+        await self.tool_registry_repo.sync_tools(self.tool_registry_records)
+        self._deactivate_registered_napcat_tools()
         logger.info(
             f"NapCat 函数工具已初始化：{self.tool_count} 个，"
-            f"工具管理数据库已同步：{len(records)} 个。"
+            f"工具管理数据库已同步：{len(self.tool_registry_records)} 个。"
         )
 
     async def terminate(self):
         await self.tool_db.close()
         return None
+
+    @filter.on_llm_request(priority=-100)
+    async def inject_napcat_tools_on_llm_request(
+        self, event: AstrMessageEvent, req: ProviderRequest
+    ):
+        """在 LLM 请求阶段按工具管理数据库动态注入 NapCat 工具。"""
+        self._unload_request_scope_napcat_tools(req)
+        if self.config.get("dynamic_injection_enabled", True) is False:
+            return
+
+        records = await self.tool_registry_repo.list_tools(enabled_only=True)
+        records_by_name = {record.tool_name: record for record in records}
+        if not records_by_name:
+            return
+
+        if req.func_tool is None:
+            req.func_tool = ToolSet()
+
+        tool_mgr = self.context.get_llm_tool_manager()
+        injected_count = 0
+        for tool_name in self.napcat_tool_names:
+            if tool_name not in records_by_name:
+                continue
+            tool = tool_mgr.get_func(tool_name)
+            if tool is None:
+                continue
+            request_tool = copy.copy(tool)
+            request_tool.active = True
+            req.func_tool.add_tool(request_tool)
+            injected_count += 1
+
+        if injected_count:
+            logger.debug(f"本轮 LLM 请求动态注入 NapCat 工具：{injected_count} 个。")
+
+    def _deactivate_registered_napcat_tools(self):
+        if self.context is None:
+            return
+        tool_mgr = self.context.get_llm_tool_manager()
+        tool_names = set(self.napcat_tool_names)
+        for tool in tool_mgr.func_list:
+            if tool.name in tool_names:
+                tool.active = False
+
+    def _unload_request_scope_napcat_tools(self, req: ProviderRequest | None):
+        if req is None or req.func_tool is None:
+            return
+        for tool_name in self.napcat_tool_names:
+            req.func_tool.remove_tool(tool_name)
 
     async def _call_napcat_api(
         self,

@@ -14,6 +14,8 @@ from astrbot.core.platform.platform_metadata import PlatformMetadata
 from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import (
     AiocqhttpMessageEvent,
 )
+from astrbot.core.agent.tool import FunctionTool, ToolSet
+from astrbot.core.provider.entities import ProviderRequest
 
 from main import NapCatFunctionToolsPlugin
 from napcat_fc.db import ToolDBManager, ToolRegistryRepo
@@ -33,6 +35,25 @@ class FakeApi:
 class FakeBot:
     def __init__(self):
         self.api = FakeApi()
+
+
+class FakeToolManager:
+    def __init__(self, tools):
+        self.func_list = list(tools)
+
+    def get_func(self, name):
+        for tool in reversed(self.func_list):
+            if tool.name == name:
+                return tool
+        return None
+
+
+class FakeContext:
+    def __init__(self, tools):
+        self.tool_manager = FakeToolManager(tools)
+
+    def get_llm_tool_manager(self):
+        return self.tool_manager
 
 
 def make_aiocqhttp_event():
@@ -172,6 +193,16 @@ def test_tool_name_keeps_internal_dot_endpoint_distinct():
     assert make_tool_name("napcat", "ocr_image") == "napcat_ocr_image"
 
 
+def make_function_tool(name: str, active: bool = True):
+    return FunctionTool(
+        name=name,
+        description=f"{name} description",
+        parameters={"type": "object", "properties": {}},
+        handler=None,
+        active=active,
+    )
+
+
 def test_build_tool_registry_data_extracts_tool_discovery_metadata():
     records = build_tool_registry_data(NapCatFunctionToolsPlugin)
     by_name = {record.tool_name: record for record in records}
@@ -225,6 +256,58 @@ async def test_tool_registry_repo_roundtrip():
         assert target.enabled is False
     finally:
         await db.close()
+        for suffix in ("", "-wal", "-shm"):
+            path = Path(str(db_path) + suffix)
+            if path.exists():
+                path.unlink()
+
+
+def test_deactivate_registered_napcat_tools_marks_global_tools_inactive():
+    napcat_tool = make_function_tool("napcat_send_group_msg")
+    other_tool = make_function_tool("other_tool")
+    plugin = NapCatFunctionToolsPlugin(context=FakeContext([napcat_tool, other_tool]))
+
+    plugin._deactivate_registered_napcat_tools()
+
+    assert napcat_tool.active is False
+    assert other_tool.active is True
+
+
+@pytest.mark.asyncio
+async def test_on_llm_request_injects_enabled_tools_as_request_scope_copies():
+    source_tool = make_function_tool("napcat_send_group_msg", active=False)
+    stale_tool = make_function_tool("napcat_get_login_info", active=True)
+    other_tool = make_function_tool("other_tool", active=True)
+    plugin = NapCatFunctionToolsPlugin(context=FakeContext([source_tool]))
+
+    db_path = (
+        Path(__file__).resolve().parents[1]
+        / f".test-dynamic-tools-{uuid.uuid4().hex}.db"
+    )
+    plugin.tool_db = ToolDBManager(str(db_path))
+    plugin.tool_registry_repo = ToolRegistryRepo(plugin.tool_db)
+    await plugin.tool_db.init_db()
+    try:
+        records = [
+            record
+            for record in build_tool_registry_data(NapCatFunctionToolsPlugin)
+            if record.tool_name == "napcat_send_group_msg"
+        ]
+        await plugin.tool_registry_repo.replace_all_tools(records)
+        req = ProviderRequest()
+        req.func_tool = ToolSet([stale_tool, other_tool])
+
+        await plugin.inject_napcat_tools_on_llm_request(make_aiocqhttp_event(), req)
+
+        assert req.func_tool.get_tool("napcat_get_login_info") is None
+        assert req.func_tool.get_tool("other_tool") is other_tool
+        injected = req.func_tool.get_tool("napcat_send_group_msg")
+        assert injected is not None
+        assert injected is not source_tool
+        assert injected.active is True
+        assert source_tool.active is False
+    finally:
+        await plugin.tool_db.close()
         for suffix in ("", "-wal", "-shm"):
             path = Path(str(db_path) + suffix)
             if path.exists():

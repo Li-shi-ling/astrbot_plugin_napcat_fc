@@ -253,6 +253,31 @@ async def test_no_parameter_tool_calls_expected_endpoint():
     assert event.bot.api.calls == [("get_login_info", {})]
 
 
+def test_information_actions_are_classified_for_return_results():
+    plugin = NapCatFunctionToolsPlugin(context=None)
+
+    assert plugin._is_information_action("get_login_info") is True
+    assert plugin._is_information_action("_get_group_notice") is True
+    assert plugin._is_information_action("fetch_custom_face") is True
+    assert plugin._is_information_action("can_send_image") is True
+    assert plugin._is_information_action("check_url_safely") is True
+    assert plugin._is_information_action("send_group_msg") is False
+    assert plugin._is_information_action("set_group_admin") is False
+
+
+@pytest.mark.asyncio
+async def test_information_tool_returns_message_to_llm_without_chat_send():
+    event = make_aiocqhttp_event()
+    plugin = NapCatFunctionToolsPlugin(context=None)
+
+    result = await plugin.napcat_get_login_info_tool(event)
+    payload = json.loads(result)
+
+    assert isinstance(result, str)
+    assert payload == {"status": "ok", "data": {}}
+    assert event.bot.api.calls == [("get_login_info", {})]
+
+
 @pytest.mark.asyncio
 async def test_onebot_alias_parameters_are_expanded():
     event = make_aiocqhttp_event()

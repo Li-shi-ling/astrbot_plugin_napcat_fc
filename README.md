@@ -12,6 +12,7 @@
 - NapCat 工具默认不作为全局 active 工具常驻暴露，而是在 `on_llm_request(priority=-100)` 阶段按搜索发现结果和数据库状态注入到当前请求。
 - `napcat_search_tools` 搜索工具会一直注入到 aiocqhttp/NapCat 请求中。它按关键词模糊搜索 NapCat 工具，将最相关的前 3 个工具加入持久化发现队列，并立即注入当前请求后续工具调用。
 - 仅系统专属工具名记录在插件类属性 `WINDOWS_TOOL_NAMES`、`LINUX_TOOL_NAMES`、`MAC_TOOL_NAMES` 中；当前只有 OCR 工具属于 Windows 专属。
+- 信息获取类接口会通过函数 `return` 把 NapCat API 响应返回给 LLM，不直接向当前聊天发送消息。
 
 ## 会话默认参数
 
@@ -64,6 +65,8 @@ LLM 调用具体接口时使用对应工具，例如 `napcat_send_group_msg`：
 ```
 
 这些工具必须在 aiocqhttp/NapCat 消息事件上下文中使用；非 aiocqhttp 平台事件不会注入 NapCat 工具。
+
+获取信息类工具，例如 `napcat_get_login_info`、`napcat_get_group_info`、`napcat_fetch_custom_face`、`napcat_can_send_image`，返回值会作为工具结果交给 LLM 继续理解和组织回复，而不是由插件直接发送到聊天窗口。
 
 ## 开发约束
 

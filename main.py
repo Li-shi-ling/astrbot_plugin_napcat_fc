@@ -29,12 +29,21 @@ from napcat_fc.tool_registry import build_tool_registry_data
     "astrbot_plugin_napcat_fc",
     "Soulter / AstrBot contributors",
     "将 NapCat / OneBot / go-cqhttp API 注册为 AstrBot 函数工具。",
-    "1.14.1",
+    "1.14.2",
 )
 class NapCatFunctionToolsPlugin(Star):
     SEARCH_TOOL_NAME = "napcat_search_tools"
     SEARCH_RESULT_LIMIT = 3
     DISCOVERED_TOOL_LIMIT = 20
+    INFORMATION_ACTION_PREFIXES = (
+        "get_",
+        "_get_",
+        "fetch_",
+        "can_",
+        "check_",
+        "nc_get_",
+        "qidian_get_",
+    )
     WINDOWS_TOOL_NAMES = (
         'napcat_dot_ocr_image',
         'napcat_ocr_image',
@@ -336,6 +345,16 @@ class NapCatFunctionToolsPlugin(Star):
         if not call_action:
             raise RuntimeError("Current aiocqhttp bot does not support call_action.")
         result = await call_action(action, **payload)
+        return self._format_napcat_return_message(action, result)
+
+    def _is_information_action(self, action: str) -> bool:
+        normalized_action = action.strip().lstrip("/")
+        return normalized_action.startswith(self.INFORMATION_ACTION_PREFIXES)
+
+    def _format_napcat_return_message(self, action: str, result) -> str:
+        """LLM 工具通过 return 把 NapCat 结果交回模型，不直接发送聊天消息。"""
+        if self._is_information_action(action):
+            return json.dumps(result, ensure_ascii=False, default=str)
         return json.dumps(result, ensure_ascii=False, default=str)
 
     def _fill_context_defaults(

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -70,11 +71,24 @@ def test_main_registers_explicit_llm_tool_decorators():
     specs = discover_all_endpoint_specs(plugin_dir)
     source = (plugin_dir / "main.py").read_text(encoding="utf-8")
 
-    assert source.count("@filter.llm_tool") == len(specs) + 1
-    assert '@filter.llm_tool(name="napcat_call_api")' in source
+    assert source.count("@filter.llm_tool") >= len(specs)
+    assert "napcat_call_api" not in source
     assert "@filter.llm_tool(name='napcat_send_group_msg')" in source
     assert "@filter.llm_tool(name='napcat_send_private_msg')" in source
     assert "@filter.llm_tool(name='napcat_set_group_anonymous_ban')" in source
+    send_group_signature = source.split("async def napcat_send_group_msg_tool(", 1)[1].split("):", 1)[0]
+    assert "payload" not in send_group_signature
+    assert "group_id: " in source
+    assert "message: " in source
+
+
+def test_platform_tool_name_class_attributes_match_registered_tools():
+    source = (Path(__file__).resolve().parents[1] / "main.py").read_text(encoding="utf-8")
+    registered_names = tuple(re.findall(r"@filter\.llm_tool\(name='([^']+)'\)", source))
+
+    assert NapCatFunctionToolsPlugin.WINDOWS_TOOL_NAMES == registered_names
+    assert NapCatFunctionToolsPlugin.LINUX_TOOL_NAMES == registered_names
+    assert NapCatFunctionToolsPlugin.MAC_TOOL_NAMES == registered_names
 
 
 @pytest.mark.asyncio
@@ -83,24 +97,47 @@ async def test_endpoint_tool_calls_expected_endpoint():
     plugin = NapCatFunctionToolsPlugin(context=None)
 
     result = await plugin.napcat_send_group_msg_tool(
-        event, {"group_id": "123", "message": "hello"}
+        event, group_id=123, message="hello", auto_escape=False
     )
 
     assert '"status": "ok"' in result
     assert event.bot.api.calls == [
-        ("send_group_msg", {"group_id": "123", "message": "hello"})
+        (
+            "send_group_msg",
+            {"group_id": 123, "message": "hello", "auto_escape": False},
+        )
     ]
 
 
 @pytest.mark.asyncio
-async def test_generic_tool_calls_expected_endpoint():
+async def test_no_parameter_tool_calls_expected_endpoint():
     event = make_aiocqhttp_event()
     plugin = NapCatFunctionToolsPlugin(context=None)
 
-    result = await plugin.napcat_call_api_tool(event, "get_group_list", {})
+    result = await plugin.napcat_get_login_info_tool(event)
 
     assert '"status": "ok"' in result
-    assert event.bot.api.calls == [("get_group_list", {})]
+    assert event.bot.api.calls == [("get_login_info", {})]
+
+
+@pytest.mark.asyncio
+async def test_onebot_alias_parameters_are_expanded():
+    event = make_aiocqhttp_event()
+    plugin = NapCatFunctionToolsPlugin(context=None)
+
+    await plugin.napcat_set_group_anonymous_ban_tool(
+        event,
+        group_id=123,
+        flag="anonymous-flag",
+        duration=60,
+    )
+
+    assert event.bot.api.calls == [
+        (
+            "set_group_anonymous_ban",
+            {"group_id": 123, "duration": 60, "flag": "anonymous-flag"},
+        )
+    ]
 
 
 @pytest.mark.asyncio

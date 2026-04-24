@@ -82,13 +82,18 @@ def test_main_registers_explicit_llm_tool_decorators():
     assert "message: " in source
 
 
-def test_platform_tool_name_class_attributes_match_registered_tools():
+def test_platform_tool_name_class_attributes_only_record_os_specific_tools():
     source = (Path(__file__).resolve().parents[1] / "main.py").read_text(encoding="utf-8")
     registered_names = tuple(re.findall(r"@filter\.llm_tool\(name='([^']+)'\)", source))
 
-    assert NapCatFunctionToolsPlugin.WINDOWS_TOOL_NAMES == registered_names
-    assert NapCatFunctionToolsPlugin.LINUX_TOOL_NAMES == registered_names
-    assert NapCatFunctionToolsPlugin.MAC_TOOL_NAMES == registered_names
+    assert NapCatFunctionToolsPlugin.WINDOWS_TOOL_NAMES == (
+        "napcat_dot_ocr_image",
+        "napcat_ocr_image",
+    )
+    assert NapCatFunctionToolsPlugin.LINUX_TOOL_NAMES == ()
+    assert NapCatFunctionToolsPlugin.MAC_TOOL_NAMES == ()
+    assert set(NapCatFunctionToolsPlugin.WINDOWS_TOOL_NAMES).issubset(registered_names)
+    assert "仅 Windows 可用" in source
 
 
 @pytest.mark.asyncio

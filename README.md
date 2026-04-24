@@ -7,7 +7,7 @@
 - 基于 `docs/napcat-apifox`、`docs/onebot-11/api` 和 `docs/go-cqhttp/api` 生成工具定义。
 - 每个发现到的用户 API 都有一个显式 `@filter.llm_tool` 方法，工具名格式为 `napcat_<接口名>`。
 - 具体接口工具使用字段级参数，例如 `group_id`、`user_id`、`message`，不再要求 LLM 传入统一 `payload`。
-- Windows、Linux、Mac 三类平台可用工具名分别记录在插件类属性 `WINDOWS_TOOL_NAMES`、`LINUX_TOOL_NAMES`、`MAC_TOOL_NAMES` 中。
+- 仅系统专属工具名记录在插件类属性 `WINDOWS_TOOL_NAMES`、`LINUX_TOOL_NAMES`、`MAC_TOOL_NAMES` 中；当前只有 OCR 工具属于 Windows 专属。
 - 复用 AstrBot 默认接入 NapCat 的 aiocqhttp 事件和 bot 实例。
 
 ## 配置

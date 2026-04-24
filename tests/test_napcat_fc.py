@@ -308,6 +308,8 @@ def test_debug_log_is_gated_by_config(monkeypatch):
     plugin._debug_log("test_node", value=1)
     assert captured
     assert "test_node" in captured[0]
+    assert '"elapsed_ms":' in captured[0]
+    assert '"delta_ms":' in captured[0]
     assert '"value": 1' in captured[0]
 
 
@@ -357,6 +359,23 @@ async def test_on_llm_request_injects_discovered_tools_as_request_scope_copies()
 
 
 @pytest.mark.asyncio
+async def test_on_llm_request_skips_napcat_tools_for_non_aiocqhttp_events():
+    source_tool = make_function_tool("napcat_send_group_msg", active=False)
+    stale_tool = make_function_tool("napcat_get_login_info", active=True)
+    other_tool = make_function_tool("other_tool", active=True)
+    plugin = NapCatFunctionToolsPlugin(context=FakeContext([source_tool]))
+    req = ProviderRequest()
+    req.func_tool = ToolSet([stale_tool, other_tool])
+
+    await plugin.inject_napcat_tools_on_llm_request(object(), req)
+
+    assert req.func_tool.get_tool("napcat_get_login_info") is None
+    assert req.func_tool.get_tool(plugin.SEARCH_TOOL_NAME) is None
+    assert req.func_tool.get_tool("napcat_send_group_msg") is None
+    assert req.func_tool.get_tool("other_tool") is other_tool
+
+
+@pytest.mark.asyncio
 async def test_search_tool_discovers_persists_and_immediately_injects_tools():
     send_group_tool = make_function_tool("napcat_send_group_msg", active=False)
     get_group_tool = make_function_tool("napcat_get_group_list", active=False)
@@ -383,6 +402,8 @@ async def test_search_tool_discovers_persists_and_immediately_injects_tools():
 
         search_tool = req.func_tool.get_tool(plugin.SEARCH_TOOL_NAME)
         assert search_tool is not None
+        assert "消息发送与撤回" in search_tool.description
+        assert "群管理" in search_tool.description
         result = await search_tool.handler(make_aiocqhttp_event(), keyword="群")
         payload = json.loads(result)
 

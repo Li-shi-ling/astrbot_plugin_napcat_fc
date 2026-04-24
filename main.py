@@ -3,6 +3,7 @@
 import copy
 import json
 import os
+import time
 
 from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent, filter
@@ -21,7 +22,7 @@ from napcat_fc.tool_registry import build_tool_registry_data
     "astrbot_plugin_napcat_fc",
     "Soulter / AstrBot contributors",
     "将 NapCat / OneBot / go-cqhttp API 注册为 AstrBot 函数工具。",
-    "1.11.0",
+    "1.12.0",
 )
 class NapCatFunctionToolsPlugin(Star):
     SEARCH_TOOL_NAME = "napcat_search_tools"
@@ -47,6 +48,8 @@ class NapCatFunctionToolsPlugin(Star):
         self.db_path = os.path.join(self.storage_dir, "napcat_fc_tools.db")
         self.tool_db = ToolDBManager(db_path=self.db_path)
         self.tool_registry_repo = ToolRegistryRepo(self.tool_db)
+        self._debug_started_at = time.perf_counter()
+        self._debug_last_at = self._debug_started_at
 
     async def initialize(self):
         self._debug_log("initialize:start", tool_count=self.tool_count, db_path=self.db_path)
@@ -75,8 +78,16 @@ class NapCatFunctionToolsPlugin(Star):
         self, event: AstrMessageEvent, req: ProviderRequest
     ):
         """在 LLM 请求阶段按工具管理数据库动态注入 NapCat 工具。"""
-        self._debug_log("llm_request:start")
+        self._debug_log(
+            "llm_request:start",
+            event_type=type(event).__name__,
+            is_aiocqhttp=self._is_aiocqhttp_event(event),
+        )
         self._unload_request_scope_napcat_tools(req)
+        if not self._is_aiocqhttp_event(event):
+            self._debug_log("llm_request:skip_non_aiocqhttp")
+            return
+
         self._ensure_request_tool_set(req)
         req.func_tool.add_tool(self._build_search_tool(req))
         self._debug_log("llm_request:search_tool_injected")
@@ -127,7 +138,18 @@ class NapCatFunctionToolsPlugin(Star):
             keyword: str,
         ) -> str:
             """按关键词搜索 NapCat 工具，并立即注入本轮请求。"""
-            self._debug_log("search_tool:start", keyword=keyword)
+            if not self._is_aiocqhttp_event(event):
+                self._debug_log(
+                    "search_tool:reject_non_aiocqhttp",
+                    event_type=type(event).__name__,
+                )
+                raise ValueError("NapCat search tool requires an aiocqhttp/NapCat message event.")
+
+            self._debug_log(
+                "search_tool:start",
+                keyword=keyword,
+                event_type=type(event).__name__,
+            )
             records = await self.tool_registry_repo.search_tools(
                 keyword,
                 limit=self.SEARCH_RESULT_LIMIT,
@@ -183,8 +205,14 @@ class NapCatFunctionToolsPlugin(Star):
                 }
             ],
             desc=(
-                "能力: 在 NapCat 工具库中按关键词模糊搜索工具，"
+                "能力: 在 NapCat/OneBot/go-cqhttp 工具库中按关键词模糊搜索工具，"
                 "将最相关的前 3 个工具加入持久化发现队列，并立即注入本轮请求。"
+                "可搜索的能力大类包括: 消息发送与撤回、群消息和私聊消息、"
+                "合并转发和历史消息、群成员和群管理、好友和请求处理、"
+                "群文件和文件下载、图片/语音/OCR、表情和收藏、账号状态、"
+                "频道/频道身份组、资料查询、缓存清理和 NapCat 扩展接口。"
+                "当你不知道具体 NapCat 工具名时，先调用本工具搜索关键词，"
+                "再使用返回并已注入的具体工具。"
             ),
             handler=search_handler,
         )
@@ -218,10 +246,22 @@ class NapCatFunctionToolsPlugin(Star):
     def _debug_log(self, node: str, **fields):
         if self.config.get("debug", False) is not True:
             return
+        now = time.perf_counter()
+        elapsed_ms = round((now - self._debug_started_at) * 1000, 3)
+        delta_ms = round((now - self._debug_last_at) * 1000, 3)
+        self._debug_last_at = now
+        fields = {
+            "elapsed_ms": elapsed_ms,
+            "delta_ms": delta_ms,
+            **fields,
+        }
         detail = ""
         if fields:
             detail = " " + json.dumps(fields, ensure_ascii=False, default=str)
         logger.debug(f"[NapCatFC] {node}{detail}")
+
+    def _is_aiocqhttp_event(self, event: AstrMessageEvent) -> bool:
+        return isinstance(event, AiocqhttpMessageEvent)
 
     async def _call_napcat_api(
         self,

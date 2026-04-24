@@ -25,6 +25,10 @@
 
 如需排查动态注入、搜索或数据库同步流程，可在插件配置中设置 `debug: true`。开启后插件会使用 AstrBot 提供的 `logger.debug` 输出关键运行节点日志；正常使用建议保持关闭。
 
+调试日志会包含 `elapsed_ms` 和 `delta_ms`：前者表示插件实例启动后的累计耗时，后者表示距离上一条调试日志的阶段耗时，用于定位搜索、数据库读取、工具注入等性能瓶颈。
+
+所有 NapCat 相关请求级工具只会在 `AiocqhttpMessageEvent` 事件中处理。非 aiocqhttp/NapCat 消息事件会卸载本轮请求里已有的 NapCat 工具，并跳过搜索工具和具体 NapCat 工具注入。
+
 ## 使用方式
 
 LLM 调用具体接口时使用对应工具，例如 `napcat_send_group_msg`：

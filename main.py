@@ -31,7 +31,7 @@ from napcat_fc.tool_registry import build_tool_registry_data
     "astrbot_plugin_napcat_fc",
     "Soulter / AstrBot contributors",
     "将 NapCat / OneBot / go-cqhttp API 注册为 AstrBot 函数工具。",
-    "1.15.4",
+    "1.15.5",
 )
 class NapCatFunctionToolsPlugin(Star):
     SEARCH_TOOL_NAME = "napcat_search_tools"
@@ -57,7 +57,7 @@ class NapCatFunctionToolsPlugin(Star):
     def __init__(self, context: Context, config: dict = None):
         super().__init__(context)
         self.config = dict(config or {})
-        self.tool_count = 180
+        self.tool_count = 182
         self.tool_registry_records = build_tool_registry_data(type(self))
         self.action_parameter_names = self._build_action_parameter_names()
         self.napcat_tool_names = tuple(
@@ -3534,7 +3534,7 @@ Returns:
 
 Args:
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
-    message(str): 必填，要发送的内容。
+    message(str): 必填，要发送的普通文本或 CQ 码。发送 Ark/小程序/结构化卡片不要使用本工具拼 [app]...[/app][data]...[/data] 文本；请改用 napcat_send_group_json_msg(json_data=Ark JSON字符串)，由插件包装 OneBot json 消息段。
     auto_escape(bool): 可选，消息内容是否作为纯文本发送 ( 即不解析 CQ 码 ) , 只在 `message` 字段是字符串时有效 默认值: `false`。
     message_type(str): 可选，消息类型 (private/group)。
     news(list): 可选，合并转发新闻。
@@ -3567,6 +3567,28 @@ Returns:
         if user_id is not None:
             payload['user_id'] = user_id
         return await self._call_napcat_api(event, 'send_group_msg', payload)
+
+    @filter.llm_tool(name='napcat_send_group_json_msg')
+    async def napcat_send_group_json_msg_tool(
+        self,
+        event: AstrMessageEvent,
+        json_data: str,
+        group_id: int = None,
+    ):
+        """能力: 发送群 Ark/小程序/结构化 JSON 卡片消息；内部使用 /send_group_msg 的 OneBot json 消息段.
+
+Args:
+    json_data(str): 必填，完整 Ark JSON 字符串。通常取 napcat_send_group_ark_share、napcat_arksharegroup、napcat_send_ark_share 或 napcat_arksharepeer 返回 JSON 的 data 字段；不要传 [app]...[/app][data]...[/data] 包装文本。
+    group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
+
+Returns:
+    str: 返回 /send_group_msg 的 API 响应 JSON 字符串。"""
+        message = [{"type": "json", "data": {"data": json_data}}]
+        return await self.napcat_send_group_msg_tool(
+            event,
+            message=message,
+            group_id=group_id,
+        )
 
     @filter.llm_tool(name='napcat_send_group_notice')
     async def napcat_send_group_notice_tool(
@@ -3696,7 +3718,7 @@ Returns:
 
 Args:
     group_id(int): 可选，群号 ( 消息类型为 `group` 时需要 )。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
-    message(str): 必填，要发送的内容。
+    message(str): 必填，要发送的普通文本或 CQ 码。发送 Ark/小程序/结构化卡片不要使用本工具拼 [app]...[/app][data]...[/data] 文本；群聊请用 napcat_send_group_json_msg，私聊请用 napcat_send_private_json_msg。
     message_type(str): 必填，消息类型, 支持 `private`、`group` , 分别对应私聊、群组, 如不传入, 则根据传入的 `*_id` 参数判断。
     user_id(int): 可选，对方 QQ 号 ( 消息类型为 `private` 时需要 )。默认使用当前消息发送者的用户 ID。
     auto_escape(bool): 可选，消息内容是否作为纯文本发送 ( 即不解析 CQ 码 ) , 只在 `message` 字段是字符串时有效 默认值: `false`。
@@ -3908,7 +3930,7 @@ Returns:
 
 Args:
     group_id(int): 可选，主动发起临时会话时的来源群号(可选, 机器人本身必须是管理员/群主)。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
-    message(str): 必填，要发送的内容。
+    message(str): 必填，要发送的普通文本或 CQ 码。发送 Ark/小程序/结构化卡片不要使用本工具拼 [app]...[/app][data]...[/data] 文本；请改用 napcat_send_private_json_msg(json_data=Ark JSON字符串)，由插件包装 OneBot json 消息段。
     user_id(int): 可选，对方 QQ 号。默认使用当前消息发送者的用户 ID。
     auto_escape(bool): 可选，消息内容是否作为纯文本发送 ( 即不解析 CQ 码 ) , 只在 `message` 字段是字符串时有效 默认值: `false`。
     message_type(str): 可选，消息类型 (private/group)。
@@ -3940,6 +3962,31 @@ Returns:
         if timeout is not None:
             payload['timeout'] = timeout
         return await self._call_napcat_api(event, 'send_private_msg', payload)
+
+    @filter.llm_tool(name='napcat_send_private_json_msg')
+    async def napcat_send_private_json_msg_tool(
+        self,
+        event: AstrMessageEvent,
+        json_data: str,
+        user_id: int = None,
+        group_id: int = None,
+    ):
+        """能力: 发送私聊 Ark/小程序/结构化 JSON 卡片消息；内部使用 /send_private_msg 的 OneBot json 消息段.
+
+Args:
+    json_data(str): 必填，完整 Ark JSON 字符串。通常取 napcat_send_group_ark_share、napcat_arksharegroup、napcat_send_ark_share 或 napcat_arksharepeer 返回 JSON 的 data 字段；不要传 [app]...[/app][data]...[/data] 包装文本。
+    user_id(int): 可选，对方 QQ 号。默认使用当前消息发送者的用户 ID。
+    group_id(int): 可选，主动发起临时会话时的来源群号(可选, 机器人本身必须是管理员/群主)。默认使用当前群聊的群号。
+
+Returns:
+    str: 返回 /send_private_msg 的 API 响应 JSON 字符串。"""
+        message = [{"type": "json", "data": {"data": json_data}}]
+        return await self.napcat_send_private_msg_tool(
+            event,
+            message=message,
+            user_id=user_id,
+            group_id=group_id,
+        )
 
     @filter.llm_tool(name='napcat_set_diy_online_status')
     async def napcat_set_diy_online_status_tool(

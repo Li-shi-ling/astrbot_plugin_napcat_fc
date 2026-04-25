@@ -653,7 +653,7 @@ def test_build_tool_registry_data_extracts_tool_discovery_metadata():
     records = build_tool_registry_data(NapCatFunctionToolsPlugin)
     by_name = {record.tool_name: record for record in records}
 
-    assert len(records) == 180
+    assert len(records) == 182
     assert by_name["napcat_send_group_msg"].endpoint == "send_group_msg"
     assert by_name["napcat_send_group_msg"].method_name == "napcat_send_group_msg_tool"
     assert "发送群消息" in by_name["napcat_send_group_msg"].capability
@@ -694,6 +694,62 @@ def test_ark_share_tools_describe_card_sending_flow():
     assert "napcat_send_private_msg(user_id=QQ号" in arksharegroup_doc
     assert "取返回 JSON 的 data 字段" in peer_doc
     assert "napcat_send_private_msg(user_id=QQ号" in peer_doc
+
+
+def test_message_send_tools_point_ark_cards_to_json_helpers():
+    records = build_tool_registry_data(NapCatFunctionToolsPlugin)
+    by_name = {record.tool_name: record for record in records}
+
+    for tool_name in {
+        "napcat_send_group_msg",
+        "napcat_send_private_msg",
+        "napcat_send_msg",
+    }:
+        params = json.loads(by_name[tool_name].parameters_json)
+        message_param = next(param for param in params if param["name"] == "message")
+        assert message_param["type"] == "str"
+        assert "napcat_send_" in message_param["description"]
+        assert "[app]" in message_param["description"]
+
+    for tool_name in {"napcat_send_group_json_msg", "napcat_send_private_json_msg"}:
+        params = json.loads(by_name[tool_name].parameters_json)
+        json_param = next(param for param in params if param["name"] == "json_data")
+        assert json_param["type"] == "str"
+        assert "完整 Ark JSON 字符串" in json_param["description"]
+        assert "[app]" in json_param["description"]
+
+
+@pytest.mark.asyncio
+async def test_json_message_helpers_wrap_ark_data_as_onebot_json_segments():
+    event = make_aiocqhttp_event(group_id="654321", user_id="123456")
+    plugin = NapCatFunctionToolsPlugin(context=None)
+    ark_json = '{"app":"com.tencent.contact.lua"}'
+
+    await plugin.napcat_send_group_json_msg_tool(event, json_data=ark_json)
+    await plugin.napcat_send_private_json_msg_tool(
+        event,
+        json_data=ark_json,
+        user_id=3527679745,
+    )
+
+    assert event.bot.api.calls == [
+        (
+            "send_group_msg",
+            {
+                "group_id": 654321,
+                "message": [{"type": "json", "data": {"data": ark_json}}],
+                "user_id": 123456,
+            },
+        ),
+        (
+            "send_private_msg",
+            {
+                "group_id": 654321,
+                "message": [{"type": "json", "data": {"data": ark_json}}],
+                "user_id": 3527679745,
+            },
+        ),
+    ]
 
 
 @pytest.mark.asyncio

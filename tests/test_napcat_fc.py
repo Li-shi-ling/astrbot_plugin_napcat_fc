@@ -1240,6 +1240,78 @@ async def test_search_tool_splits_terms_and_skips_already_discovered_candidates(
 
 
 @pytest.mark.asyncio
+async def test_search_tool_can_inject_unlimited_request_scope_tools_but_persist_limit():
+    tool_names = {
+        "napcat_get_group_info",
+        "napcat_get_group_info_ex",
+        "napcat_get_group_list",
+        "napcat_get_group_member_info",
+        "napcat_send_msg",
+    }
+    tools = [make_function_tool(tool_name, active=False) for tool_name in tool_names]
+    plugin = NapCatFunctionToolsPlugin(
+        context=FakeContext(tools),
+        config={
+            "discovered_tool_limit": 1,
+            "search_candidate_limit": 5,
+            "unlimited_request_tool_injection": True,
+        },
+    )
+    db_path = (
+        Path(__file__).resolve().parents[1]
+        / f".test-unlimited-request-tools-{uuid.uuid4().hex}.db"
+    )
+    plugin.tool_db = ToolDBManager(str(db_path))
+    plugin.tool_registry_repo = ToolRegistryRepo(plugin.tool_db)
+    await plugin.tool_db.init_db()
+    try:
+        records = [
+            record
+            for record in build_tool_registry_data(NapCatFunctionToolsPlugin)
+            if record.tool_name in tool_names
+        ]
+        await plugin.tool_registry_repo.replace_all_tools(records)
+        req = ProviderRequest()
+        req.func_tool = ToolSet()
+        await plugin.inject_napcat_tools_on_llm_request(make_aiocqhttp_event(), req)
+
+        search_tool = req.func_tool.get_tool(plugin.SEARCH_TOOL_NAME)
+        first = json.loads(
+            await search_tool.handler(
+                make_aiocqhttp_event(),
+                keyword="group",
+                result_limit=2,
+            )
+        )
+        first_names = [tool["name"] for tool in first["matched_tools"]]
+        second = json.loads(
+            await search_tool.handler(
+                make_aiocqhttp_event(),
+                keyword="group",
+                result_limit=2,
+            )
+        )
+        second_names = [tool["name"] for tool in second["matched_tools"]]
+        request_scope_names = {
+            name for name in tool_names if req.func_tool.get_tool(name) is not None
+        }
+        persisted_names = await plugin.tool_registry_repo.list_discovered_tool_names()
+
+        assert first["unlimited_request_tool_injection"] is True
+        assert second["unlimited_request_tool_injection"] is True
+        assert set(first_names).isdisjoint(second_names)
+        assert len(request_scope_names) > len(persisted_names)
+        assert len(persisted_names) <= 1
+        assert second["request_scope_tool_count"] == len(request_scope_names)
+    finally:
+        await plugin.tool_db.close()
+        for suffix in ("", "-wal", "-shm"):
+            path = Path(str(db_path) + suffix)
+            if path.exists():
+                path.unlink()
+
+
+@pytest.mark.asyncio
 async def test_search_tool_filters_platform_specific_results_before_persisting():
     ocr_tool = make_function_tool("napcat_dot_ocr_image", active=False)
     plugin = NapCatFunctionToolsPlugin(context=FakeContext([ocr_tool]))

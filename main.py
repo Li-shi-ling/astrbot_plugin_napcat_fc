@@ -31,7 +31,7 @@ from napcat_fc.tool_registry import build_tool_registry_data
     "astrbot_plugin_napcat_fc",
     "Soulter / AstrBot contributors",
     "将 NapCat / OneBot / go-cqhttp API 注册为 AstrBot 函数工具。",
-    "1.15.17",
+    "1.15.18",
 )
 class NapCatFunctionToolsPlugin(Star):
     SEARCH_TOOL_NAME = "napcat_search_tools"
@@ -179,6 +179,18 @@ class NapCatFunctionToolsPlugin(Star):
         self._debug_log("inject_tools:done", injected_count=injected_count)
         return injected_count
 
+    def _get_request_scope_napcat_tool_names(
+        self, req: ProviderRequest | None
+    ) -> set[str]:
+        if req is None or req.func_tool is None:
+            return set()
+        known_names = set(self.napcat_tool_names)
+        return {
+            tool.name
+            for tool in req.func_tool.tools
+            if getattr(tool, "name", None) in known_names
+        }
+
     def _build_search_tool(self, req: ProviderRequest):
         async def search_handler(
             event: AstrMessageEvent,
@@ -214,15 +226,22 @@ class NapCatFunctionToolsPlugin(Star):
             discovered_names = set(
                 await self.tool_registry_repo.list_discovered_tool_names()
             )
+            request_scope_names = self._get_request_scope_napcat_tool_names(req)
+            excluded_names = set(discovered_names)
+            unlimited_request_injection = (
+                self._is_unlimited_request_tool_injection_enabled()
+            )
+            if unlimited_request_injection:
+                excluded_names.update(request_scope_names)
             skipped_discovered_names = [
                 record.tool_name
                 for record in platform_records
-                if record.tool_name in discovered_names
+                if record.tool_name in excluded_names
             ]
             records = [
                 record
                 for record in platform_records
-                if record.tool_name not in discovered_names
+                if record.tool_name not in excluded_names
             ][:result_limit_value]
             matched_names = [record.tool_name for record in records]
             self._debug_log(
@@ -233,6 +252,8 @@ class NapCatFunctionToolsPlugin(Star):
                 candidate_count=len(candidate_records),
                 platform_candidate_count=len(platform_records),
                 skipped_discovered_count=len(skipped_discovered_names),
+                request_scope_tool_count=len(request_scope_names),
+                unlimited_request_tool_injection=unlimited_request_injection,
                 result_limit=result_limit_value,
                 matched_count=len(matched_names),
                 matched_tools=matched_names,
@@ -270,6 +291,10 @@ class NapCatFunctionToolsPlugin(Star):
                     "injected_count": injected_count,
                     "discovered_tool_count": len(queue),
                     "max_discovered_tools": discovered_tool_limit,
+                    "request_scope_tool_count": len(
+                        self._get_request_scope_napcat_tool_names(req)
+                    ),
+                    "unlimited_request_tool_injection": unlimited_request_injection,
                     "skipped_discovered_tools": sorted(skipped_discovered_names),
                 },
                 ensure_ascii=False,
@@ -352,6 +377,9 @@ class NapCatFunctionToolsPlugin(Star):
         except (TypeError, ValueError):
             return self.DISCOVERED_TOOL_LIMIT
         return max(1, limit)
+
+    def _is_unlimited_request_tool_injection_enabled(self) -> bool:
+        return self.config.get("unlimited_request_tool_injection", False) is True
 
     async def _search_tool_candidates(
         self,

@@ -49,6 +49,8 @@
 
 如需调整已发现工具持久化队列上限，可在插件配置中设置 `discovered_tool_limit`，默认 `20`，最小有效值为 `1`。
 
+如需让同一轮 LLM 请求中通过 `napcat_search_tools` 添加的工具不受持久化队列上限限制，可设置 `unlimited_request_tool_injection: true`。开启后，本轮请求内多次搜索会继续注入新工具；请求结束后的下一轮仍按 `discovered_tool_limit` 只保留持久化队列上限内的工具。
+
 如需排查动态注入、搜索或数据库同步流程，可在插件配置中设置 `debug: true`。开启后插件会使用 AstrBot 提供的 `logger.debug` 输出关键运行节点日志。调试日志包含 `elapsed_ms` 和 `delta_ms`，用于定位搜索、数据库读取、工具注入等性能瓶颈。
 
 所有 NapCat 相关请求级工具只会在 `AiocqhttpMessageEvent` 事件中处理。非 aiocqhttp/NapCat 消息事件会卸载本轮请求里已有的 NapCat 工具，并跳过搜索工具和具体 NapCat 工具注入。

@@ -693,6 +693,31 @@ def test_tool_capability_prompts_are_concise_for_llm_discovery():
         assert "|" not in record.capability
 
 
+def test_todo_tracks_all_tools_and_first_batch_prompt_progress():
+    records = build_tool_registry_data(NapCatFunctionToolsPlugin)
+    todo_text = (Path(__file__).resolve().parents[1] / "TODO.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert todo_text.count("- [") == len(records)
+    assert "- [x] 001. `napcat_arksharegroup`" in todo_text
+    assert "- [x] 030. `napcat_download_file`" in todo_text
+    assert "- [ ] 031. `napcat_download_file_image_stream`" in todo_text
+
+
+def test_first_batch_tool_prompts_include_searchable_context():
+    records = build_tool_registry_data(NapCatFunctionToolsPlugin)
+    by_name = {record.tool_name: record for record in records}
+
+    assert "群邀请" in by_name["napcat_arksharegroup"].capability
+    assert "好友名片" in by_name["napcat_arksharepeer"].capability
+    assert "发送语音" in by_name["napcat_can_send_record"].capability
+    assert "群待办" in by_name["napcat_cancel_group_todo"].capability
+    assert "内联键盘" in by_name["napcat_click_inline_keyboard_button"].capability
+    assert "关键词提取" in by_name["napcat_dot_get_word_slices"].capability
+    assert "OCR" in by_name["napcat_dot_ocr_image"].capability
+
+
 def test_ark_share_tools_describe_auto_send_targets():
     records = build_tool_registry_data(NapCatFunctionToolsPlugin)
     by_name = {record.tool_name: record for record in records}
@@ -712,7 +737,7 @@ def test_ark_share_tools_describe_auto_send_targets():
         send_user_param = next(param for param in params if param["name"] == "send_user_id")
         assert "默认发送到当前会话" in send_group_param["description"]
         assert "默认发送到当前会话" in send_user_param["description"]
-        assert "自动发送" in by_name[tool_name].capability
+        assert "发送" in by_name[tool_name].capability
 
 
 @pytest.mark.asyncio

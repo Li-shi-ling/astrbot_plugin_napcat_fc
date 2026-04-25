@@ -31,7 +31,7 @@ from napcat_fc.tool_registry import build_tool_registry_data
     "astrbot_plugin_napcat_fc",
     "Soulter / AstrBot contributors",
     "将 NapCat / OneBot / go-cqhttp API 注册为 AstrBot 函数工具。",
-    "1.15.11",
+    "1.15.12",
 )
 class NapCatFunctionToolsPlugin(Star):
     SEARCH_TOOL_NAME = "napcat_search_tools"
@@ -932,7 +932,7 @@ class NapCatFunctionToolsPlugin(Star):
         send_group_id: int = None,
         send_user_id: int = None,
     ):
-        """获取群分享 Ark 卡片并自动发送到群聊或私聊
+        """获取群分享 Ark 卡片并发送到群聊或私聊，适合分享群名片、群邀请和群资料卡片
 
 Args:
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
@@ -958,7 +958,7 @@ Returns:
         send_group_id: int = None,
         send_user_id: int = None,
     ):
-        """获取用户推荐 Ark 卡片并自动发送到群聊或私聊
+        """获取用户推荐 Ark 卡片并发送到群聊或私聊，适合分享联系人推荐、好友名片和用户邀请卡片
 
 Args:
     phone_number(str): 必填，手机号。
@@ -988,7 +988,7 @@ Returns:
         self,
         event: AstrMessageEvent,
     ):
-        """账号退出
+        """让当前 QQ 账号退出登录，适合主动下线、切换账号或关闭当前机器人会话
 
 Args:
     无接口参数。
@@ -1003,7 +1003,7 @@ Returns:
         self,
         event: AstrMessageEvent,
     ):
-        """检查是否可以发送图片
+        """检查当前账号是否支持发送图片，适合发送图片前检测图片消息能力
 
 Args:
     无接口参数。
@@ -1018,7 +1018,7 @@ Returns:
         self,
         event: AstrMessageEvent,
     ):
-        """检查是否可以发送语音
+        """检查当前账号是否支持发送语音，适合发送语音、录音或音频消息前检测能力
 
 Args:
     无接口参数。
@@ -1036,7 +1036,7 @@ Returns:
         message_id: int = None,
         message_seq: int = None,
     ):
-        """将指定消息对应的群待办取消
+        """取消指定消息关联的群待办，适合撤销群内待办、取消提醒或移除待办状态
 
 Args:
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
@@ -1060,7 +1060,7 @@ Returns:
         msg_id: str,
         user_id: int = None,
     ):
-        """取消在线文件
+        """取消在线文件传输或接收，适合中止文件上传、下载或在线文件任务
 
 Args:
     msg_id(str): 必填，消息 ID。
@@ -1080,7 +1080,7 @@ Returns:
         event: AstrMessageEvent,
         url: str,
     ):
-        """检查指定URL的安全等级
+        """检测指定 URL 的安全等级，适合打开链接、分享网页或处理外部地址前做安全检查
 
 Args:
     url(str): 必填，要检查的 URL。
@@ -1097,7 +1097,7 @@ Returns:
         self,
         event: AstrMessageEvent,
     ):
-        """清理缓存
+        """清理 NapCat 缓存数据，适合释放缓存空间、刷新临时状态或排查缓存异常
 
 Args:
     无接口参数。
@@ -1112,7 +1112,7 @@ Returns:
         self,
         event: AstrMessageEvent,
     ):
-        """清理流临时文件
+        """清理流式下载产生的临时文件，适合释放下载缓存和删除语音、图片、文件流残留
 
 Args:
     无接口参数。
@@ -1132,7 +1132,7 @@ Returns:
         msg_seq: int,
         group_id: int = None,
     ):
-        """点击内联键盘按钮
+        """点击指定消息中的内联键盘按钮，适合模拟按钮交互、触发机器人回调或操作内联菜单
 
 Args:
     bot_appid(str): 必填，机器人AppID。
@@ -1163,7 +1163,7 @@ Returns:
         message_id: int = None,
         message_seq: int = None,
     ):
-        """将指定消息对应的群待办标记为已完成
+        """将指定消息关联的群待办标记为完成，适合完成群提醒、任务确认或待办闭环
 
 Args:
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
@@ -1187,7 +1187,7 @@ Returns:
         brief: str,
         rawData: str,
     ):
-        """创建收藏
+        """创建新的 QQ 收藏内容，适合收藏文本、图片、语音、文件或消息内容
 
 Args:
     brief(str): 必填，简要描述。
@@ -1210,7 +1210,7 @@ Returns:
         name: str = None,
         thumb_path: str = None,
     ):
-        """创建闪传任务
+        """创建闪传任务，适合准备快速上传、分享或发送大文件集合
 
 Args:
     files(str): 必填，文件列表或单个文件路径。
@@ -1237,7 +1237,7 @@ Returns:
         name: str = None,
         parent_id: str = None,
     ):
-        """创建群文件文件夹
+        """在群文件中创建文件夹，适合整理群文件目录、分类资料或新建共享目录
 
 Args:
     folder_name(str): 必填，文件夹名称。
@@ -1267,7 +1267,7 @@ Returns:
         independent: bool = None,
         initial_users: list = None,
     ):
-        """创建频道角色
+        """在频道中创建角色，适合管理频道身份组、权限角色和成员分组
 
 Args:
     color(str): 必填，颜色。
@@ -1299,7 +1299,7 @@ Returns:
         lloc: str,
         group_id: int = None,
     ):
-        """删除群相册媒体
+        """删除群相册中的媒体文件，适合移除群相册图片、视频或相册资源
 
 Args:
     album_id(str): 必填，相册ID。
@@ -1323,7 +1323,7 @@ Returns:
         notice_id: str,
         group_id: int = None,
     ):
-        """_删除群公告
+        """删除指定群公告，适合撤下群公告、清理过期通知或管理公告内容
 
 Args:
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
@@ -1346,7 +1346,7 @@ Returns:
         msg_random: str = None,
         msg_seq: int = None,
     ):
-        """删除群精华消息
+        """删除群精华消息，适合移除已设为精华的群消息或整理群精华列表
 
 Args:
     message_id(int): 可选，消息ID。默认优先使用被回复消息 ID；未回复或解析失败时使用当前消息 ID。
@@ -1375,7 +1375,7 @@ Returns:
         user_id: int = None,
         friend_id: str = None,
     ):
-        """从好友列表中删除指定用户
+        """删除指定 QQ 好友，适合解除好友关系或清理好友列表
 
 Args:
     temp_block(bool): 必填，是否加入黑名单。
@@ -1403,7 +1403,7 @@ Returns:
         group_id: int = None,
         busid: int = None,
     ):
-        """在群文件系统中删除指定的文件
+        """删除指定群文件，适合清理群文件资源、移除过期附件或删除共享文件
 
 Args:
     file_id(str): 必填，文件ID 参考 `File` 对象。
@@ -1428,7 +1428,7 @@ Returns:
         group_id: int = None,
         folder: str = None,
     ):
-        """删除群文件夹
+        """删除指定群文件夹，适合移除空目录、清理群文件分类或整理群文件空间
 
 Args:
     folder_id(str): 必填，文件夹ID。
@@ -1452,7 +1452,7 @@ Returns:
         guild_id: str = None,
         role_id: str = None,
     ):
-        """删除频道角色
+        """删除频道角色，适合移除频道身份组、权限角色或废弃角色配置
 
 Args:
     guild_id(str): 可选，频道ID。
@@ -1473,7 +1473,7 @@ Returns:
         event: AstrMessageEvent,
         message_id: int = None,
     ):
-        """撤回已发送的消息
+        """撤回指定消息，适合删除机器人已发送消息、撤回误发内容或清理会话消息
 
 Args:
     message_id(int): 可选，消息 ID。默认优先使用被回复消息 ID；未回复或解析失败时使用当前消息 ID。
@@ -1490,7 +1490,7 @@ Returns:
         event: AstrMessageEvent,
         user_id: int = None,
     ):
-        """删除单向好友
+        """删除单向好友，适合清理只保留在单向关系中的陌生人或历史联系人
 
 Args:
     user_id(int): 可选，单向好友QQ号。
@@ -1511,7 +1511,7 @@ Returns:
         lloc: str,
         group_id: int = None,
     ):
-        """发表群相册评论
+        """给群相册内容发表评论，适合评论群相册图片、视频或媒体动态
 
 Args:
     album_id(str): 必填，相册 ID。
@@ -1537,7 +1537,7 @@ Returns:
         event: AstrMessageEvent,
         content: str = None,
     ):
-        """获取中文分词。
+        """对中文文本进行分词，适合关键词提取、文本切分和搜索词分析
 
 Args:
     content(str): 可选，内容。
@@ -1556,7 +1556,7 @@ Returns:
         context: dict,
         operation: dict,
     ):
-        """执行 OneBot 快速操作。
+        """执行 OneBot 快速操作，适合按事件上下文快速响应、撤回或发送复合动作
 
 Args:
     context(dict): 必填，事件数据对象, 可做精简, 如去掉 `message` 等无用字段。
@@ -1577,7 +1577,7 @@ Returns:
         event: AstrMessageEvent,
         image: str,
     ):
-        """识别图片文字，仅 Windows 可用。
+        """识别图片文字，仅 Windows 可用，适合 OCR 提取截图、图片或表情包中的文本
 
 Args:
     image(str): 必填，图片路径、URL或Base64。
@@ -1599,7 +1599,7 @@ Returns:
         thread_count: int = None,
         url: str = None,
     ):
-        """下载网络文件到本地临时目录
+        """下载网络文件到本地临时目录，适合获取 URL 文件、缓存远程资源或准备后续上传发送
 
 Args:
     base64(str): 可选，base64数据。

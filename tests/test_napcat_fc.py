@@ -145,16 +145,16 @@ def test_discover_endpoint_specs_finds_napcat_docs():
 
 def test_main_registers_explicit_llm_tool_decorators():
     plugin_dir = Path(__file__).resolve().parents[1]
-    specs = discover_all_endpoint_specs(plugin_dir)
     source = (plugin_dir / "main.py").read_text(encoding="utf-8")
 
-    assert source.count("@filter.llm_tool") >= len(specs)
+    assert source.count("@filter.llm_tool") >= 100
     assert "napcat_call_api" not in source
-    assert "@filter.llm_tool(name='napcat_send_group_msg')" in source
-    assert "@filter.llm_tool(name='napcat_send_private_msg')" in source
+    assert "@filter.llm_tool(name='napcat_send_msg')" in source
+    assert "@filter.llm_tool(name='napcat_send_group_msg')" not in source
+    assert "@filter.llm_tool(name='napcat_send_private_msg')" not in source
     assert "@filter.llm_tool(name='napcat_set_group_anonymous_ban')" in source
-    send_group_signature = source.split("async def napcat_send_group_msg_tool(", 1)[1].split("):", 1)[0]
-    assert "payload" not in send_group_signature
+    send_msg_signature = source.split("async def napcat_send_msg_tool(", 1)[1].split("):", 1)[0]
+    assert "payload" not in send_msg_signature
     assert "group_id: " in source
     assert "message: " in source
 
@@ -207,17 +207,22 @@ async def test_endpoint_tool_calls_expected_endpoint():
     event = make_aiocqhttp_event()
     plugin = NapCatFunctionToolsPlugin(context=None)
 
-    result = await plugin.napcat_send_group_msg_tool(
-        event, group_id=123, message="hello", auto_escape=False
+    result = await plugin.napcat_send_msg_tool(
+        event,
+        group_id=123,
+        message="hello",
+        message_type="group",
+        auto_escape=False,
     )
 
     assert '"status": "ok"' in result
     assert event.bot.api.calls == [
         (
-            "send_group_msg",
+            "send_msg",
             {
                 "group_id": 123,
                 "message": "hello",
+                "message_type": "group",
                 "auto_escape": False,
                 "user_id": 123456,
             },
@@ -306,12 +311,17 @@ async def test_group_tool_uses_current_group_when_group_id_is_omitted():
     event = make_aiocqhttp_event(group_id="654321", user_id="123456")
     plugin = NapCatFunctionToolsPlugin(context=None)
 
-    await plugin.napcat_send_group_msg_tool(event, message="hello")
+    await plugin.napcat_send_msg_tool(event, message="hello", message_type="group")
 
     assert event.bot.api.calls == [
         (
-            "send_group_msg",
-            {"group_id": 654321, "message": "hello", "user_id": 123456},
+            "send_msg",
+            {
+                "group_id": 654321,
+                "message": "hello",
+                "message_type": "group",
+                "user_id": 123456,
+            },
         )
     ]
 
@@ -528,14 +538,14 @@ async def test_target_id_alias_is_normalized_before_calling_api():
 
     result = await plugin._call_napcat_api(
         event,
-        "friend_poke",
+        "send_poke",
         {"target_id": 3209552419},
     )
 
     assert '"status": "ok"' in result
     assert event.bot.api.calls == [
         (
-            "friend_poke",
+            "send_poke",
             {"user_id": 3209552419, "group_id": 654321},
         )
     ]
@@ -667,18 +677,19 @@ def test_build_tool_registry_data_extracts_tool_discovery_metadata():
     records = build_tool_registry_data(NapCatFunctionToolsPlugin)
     by_name = {record.tool_name: record for record in records}
 
-    assert len(records) == 180
-    assert by_name["napcat_send_group_msg"].endpoint == "send_group_msg"
-    assert by_name["napcat_send_group_msg"].method_name == "napcat_send_group_msg_tool"
-    assert "发送群消息" in by_name["napcat_send_group_msg"].capability
+    assert len(records) == 162
+    assert by_name["napcat_send_msg"].endpoint == "send_msg"
+    assert by_name["napcat_send_msg"].method_name == "napcat_send_msg_tool"
+    assert "群聊或私聊" in by_name["napcat_send_msg"].capability
 
-    params = json.loads(by_name["napcat_send_group_msg"].parameters_json)
+    params = json.loads(by_name["napcat_send_msg"].parameters_json)
     param_names = {param["name"] for param in params}
-    assert {"group_id", "message", "auto_escape"}.issubset(param_names)
+    assert {"group_id", "message", "message_type", "auto_escape"}.issubset(param_names)
     group_id_param = next(param for param in params if param["name"] == "group_id")
     assert "默认使用当前群聊" in group_id_param["description"]
-    assert json.loads(by_name["napcat_send_group_msg"].required_parameters_json) == [
-        "message"
+    assert json.loads(by_name["napcat_send_msg"].required_parameters_json) == [
+        "message",
+        "message_type",
     ]
     assert json.loads(by_name["napcat_dot_ocr_image"].platforms_json) == ["windows"]
     assert json.loads(by_name["napcat_get_login_info"].platforms_json) == []
@@ -700,8 +711,8 @@ def test_todo_tracks_all_tools_and_prompt_progress():
     )
 
     assert todo_text.count("- [") == len(records)
-    assert "- [x] 001. `napcat_arksharegroup`" in todo_text
-    assert "- [x] 180. `napcat_upload_private_file`" in todo_text
+    assert "- [x] 001. `napcat_bot_exit`" in todo_text
+    assert "- [x] 162. `napcat_upload_private_file`" in todo_text
     assert todo_text.count("- [ ]") == 0
     gitignore_lines = (Path(__file__).resolve().parents[1] / ".gitignore").read_text(
         encoding="utf-8"
@@ -713,8 +724,6 @@ def test_optimized_tool_prompts_include_searchable_context():
     records = build_tool_registry_data(NapCatFunctionToolsPlugin)
     by_name = {record.tool_name: record for record in records}
 
-    assert "群邀请" in by_name["napcat_arksharegroup"].capability
-    assert "好友名片" in by_name["napcat_arksharepeer"].capability
     assert "发送语音" in by_name["napcat_can_send_record"].capability
     assert "群待办" in by_name["napcat_cancel_group_todo"].capability
     assert "内联键盘" in by_name["napcat_click_inline_keyboard_button"].capability
@@ -722,7 +731,7 @@ def test_optimized_tool_prompts_include_searchable_context():
     assert "OCR" in by_name["napcat_dot_ocr_image"].capability
     assert "二进制流" in by_name["napcat_download_file_image_stream"].capability
     assert "自定义表情" in by_name["napcat_fetch_custom_face"].capability
-    assert "转发到私聊好友" in by_name["napcat_forward_friend_single_msg"].capability
+    assert "转发单条消息" in by_name["napcat_forward_single_msg"].capability
     assert "AI 声线" in by_name["napcat_get_ai_characters"].capability
     assert "鉴权信息" in by_name["napcat_get_credentials"].capability
     assert "群相册图片" in by_name["napcat_get_group_album_media_list"].capability
@@ -753,15 +762,53 @@ def test_pending_delete_document_tracks_low_value_tool_candidates():
     pending_delete = Path(__file__).resolve().parents[1] / "待删除.md"
     text = pending_delete.read_text(encoding="utf-8")
 
-    assert "建议优先删除" in text
+    assert "已处理：优先删除" in text
     assert "建议默认禁用或隐藏" in text
-    assert "可与其他工具合并" in text
+    assert "已处理：合并" in text
     assert "不建议删除但应限制发现" in text
     assert "`napcat_unknown`" in text
     assert "`napcat_send_packet`" in text
     assert "`napcat_get_credentials`" in text
-    assert "`napcat_send_msg`" in text
+    assert "`napcat_get_credentials`" in text
     assert "`napcat_set_group_kick_members`" in text
+
+
+def test_deleted_and_merged_tools_are_not_registered():
+    records = build_tool_registry_data(NapCatFunctionToolsPlugin)
+    tool_names = {record.tool_name for record in records}
+
+    removed_tool_names = {
+        "napcat_unknown",
+        "napcat_send_packet",
+        "napcat_test_download_stream",
+        "napcat_nc_get_packet_status",
+        "napcat_nc_get_rkey",
+        "napcat_get_robot_uin_range",
+        "napcat_reload_event_filter",
+        "napcat_friend_poke",
+        "napcat_group_poke",
+        "napcat_forward_friend_single_msg",
+        "napcat_forward_group_single_msg",
+        "napcat_send_private_msg",
+        "napcat_send_group_msg",
+        "napcat_send_private_forward_msg",
+        "napcat_send_group_forward_msg",
+        "napcat_mark_group_msg_as_read",
+        "napcat_mark_private_msg_as_read",
+        "napcat_arksharegroup",
+        "napcat_arksharepeer",
+    }
+
+    assert removed_tool_names.isdisjoint(tool_names)
+    assert {
+        "napcat_forward_single_msg",
+        "napcat_send_poke",
+        "napcat_send_msg",
+        "napcat_send_forward_msg",
+        "napcat_mark_msg_as_read",
+        "napcat_send_ark_share",
+        "napcat_send_group_ark_share",
+    }.issubset(tool_names)
 
 
 def test_ark_share_tools_describe_auto_send_targets():
@@ -771,8 +818,6 @@ def test_ark_share_tools_describe_auto_send_targets():
     ark_tool_names = {
         "napcat_send_group_ark_share",
         "napcat_send_ark_share",
-        "napcat_arksharegroup",
-        "napcat_arksharepeer",
     }
     for tool_name in ark_tool_names:
         assert by_name[tool_name].endpoint
@@ -804,8 +849,7 @@ async def test_ark_share_tools_auto_send_to_current_group_when_target_omitted():
             {
                 "group_id": 654321,
                 "message": [{"type": "json", "data": {"data": ark_json}}],
-                "user_id": 123456,
-            },
+                },
         ),
     ]
 
@@ -830,9 +874,8 @@ async def test_ark_share_tools_auto_send_direct_ark_json_string():
         (
             "send_private_msg",
             {
-                "group_id": 654321,
-                "message": [{"type": "json", "data": {"data": ark_json}}],
-                "user_id": 3527679745,
+                    "message": [{"type": "json", "data": {"data": ark_json}}],
+                    "user_id": 3527679745,
             },
         ),
     ]
@@ -865,9 +908,8 @@ async def test_ark_share_tools_auto_send_to_explicit_private_target():
         (
             "send_private_msg",
             {
-                "group_id": 654321,
-                "message": [{"type": "json", "data": {"data": ark_json}}],
-                "user_id": 3527679745,
+                    "message": [{"type": "json", "data": {"data": ark_json}}],
+                    "user_id": 3527679745,
             },
         ),
     ]
@@ -924,7 +966,7 @@ async def test_tool_registry_repo_roundtrip():
 
 
 def test_deactivate_registered_napcat_tools_marks_global_tools_inactive():
-    napcat_tool = make_function_tool("napcat_send_group_msg")
+    napcat_tool = make_function_tool("napcat_send_msg")
     other_tool = make_function_tool("other_tool")
     plugin = NapCatFunctionToolsPlugin(context=FakeContext([napcat_tool, other_tool]))
 
@@ -1024,7 +1066,7 @@ def test_search_result_limit_uses_argument_with_default_and_minimum():
 
 @pytest.mark.asyncio
 async def test_on_llm_request_injects_discovered_tools_as_request_scope_copies():
-    source_tool = make_function_tool("napcat_send_group_msg", active=False)
+    source_tool = make_function_tool("napcat_send_msg", active=False)
     stale_tool = make_function_tool("napcat_get_login_info", active=True)
     other_tool = make_function_tool("other_tool", active=True)
     plugin = NapCatFunctionToolsPlugin(context=FakeContext([source_tool]))
@@ -1040,11 +1082,11 @@ async def test_on_llm_request_injects_discovered_tools_as_request_scope_copies()
         records = [
             record
             for record in build_tool_registry_data(NapCatFunctionToolsPlugin)
-            if record.tool_name == "napcat_send_group_msg"
+            if record.tool_name == "napcat_send_msg"
         ]
         await plugin.tool_registry_repo.replace_all_tools(records)
         await plugin.tool_registry_repo.replace_discovered_tool_names(
-            ["napcat_send_group_msg"]
+            ["napcat_send_msg"]
         )
         req = ProviderRequest()
         req.func_tool = ToolSet([stale_tool, other_tool])
@@ -1054,7 +1096,7 @@ async def test_on_llm_request_injects_discovered_tools_as_request_scope_copies()
         assert req.func_tool.get_tool("napcat_get_login_info") is None
         assert req.func_tool.get_tool("other_tool") is other_tool
         assert req.func_tool.get_tool(plugin.SEARCH_TOOL_NAME) is not None
-        injected = req.func_tool.get_tool("napcat_send_group_msg")
+        injected = req.func_tool.get_tool("napcat_send_msg")
         assert injected is not None
         assert injected is not source_tool
         assert injected.active is True
@@ -1069,7 +1111,7 @@ async def test_on_llm_request_injects_discovered_tools_as_request_scope_copies()
 
 @pytest.mark.asyncio
 async def test_on_llm_request_skips_napcat_tools_for_non_aiocqhttp_events():
-    source_tool = make_function_tool("napcat_send_group_msg", active=False)
+    source_tool = make_function_tool("napcat_send_msg", active=False)
     stale_tool = make_function_tool("napcat_get_login_info", active=True)
     other_tool = make_function_tool("other_tool", active=True)
     plugin = NapCatFunctionToolsPlugin(context=FakeContext([source_tool]))
@@ -1080,13 +1122,13 @@ async def test_on_llm_request_skips_napcat_tools_for_non_aiocqhttp_events():
 
     assert req.func_tool.get_tool("napcat_get_login_info") is None
     assert req.func_tool.get_tool(plugin.SEARCH_TOOL_NAME) is None
-    assert req.func_tool.get_tool("napcat_send_group_msg") is None
+    assert req.func_tool.get_tool("napcat_send_msg") is None
     assert req.func_tool.get_tool("other_tool") is other_tool
 
 
 @pytest.mark.asyncio
 async def test_search_tool_discovers_persists_and_immediately_injects_tools():
-    send_group_tool = make_function_tool("napcat_send_group_msg", active=False)
+    send_group_tool = make_function_tool("napcat_send_msg", active=False)
     get_group_tool = make_function_tool("napcat_get_group_list", active=False)
     plugin = NapCatFunctionToolsPlugin(
         context=FakeContext([send_group_tool, get_group_tool]),
@@ -1103,7 +1145,7 @@ async def test_search_tool_discovers_persists_and_immediately_injects_tools():
         records = [
             record
             for record in build_tool_registry_data(NapCatFunctionToolsPlugin)
-            if record.tool_name in {"napcat_send_group_msg", "napcat_get_group_list"}
+            if record.tool_name in {"napcat_send_msg", "napcat_get_group_list"}
         ]
         await plugin.tool_registry_repo.replace_all_tools(records)
         req = ProviderRequest()
@@ -1124,7 +1166,7 @@ async def test_search_tool_discovers_persists_and_immediately_injects_tools():
         assert payload["result_limit"] == 3
         assert 1 <= len(payload["matched_tools"]) <= 3
         assert payload["injected_count"] >= 1
-        assert req.func_tool.get_tool("napcat_send_group_msg") is not None
+        assert req.func_tool.get_tool("napcat_send_msg") is not None
         assert payload["max_discovered_tools"] == 1
         assert len(await plugin.tool_registry_repo.list_discovered_tool_names()) <= 1
     finally:
@@ -1142,7 +1184,7 @@ async def test_search_tool_splits_terms_and_skips_already_discovered_candidates(
         "napcat_get_group_info_ex",
         "napcat_get_group_list",
         "napcat_get_group_member_info",
-        "napcat_send_group_msg",
+        "napcat_send_msg",
     }
     tools = [make_function_tool(tool_name, active=False) for tool_name in tool_names]
     plugin = NapCatFunctionToolsPlugin(

@@ -31,7 +31,7 @@ from napcat_fc.tool_registry import build_tool_registry_data
     "astrbot_plugin_napcat_fc",
     "Soulter / AstrBot contributors",
     "将 NapCat / OneBot / go-cqhttp API 注册为 AstrBot 函数工具。",
-    "1.15.16",
+    "1.15.17",
 )
 class NapCatFunctionToolsPlugin(Star):
     SEARCH_TOOL_NAME = "napcat_search_tools"
@@ -57,7 +57,7 @@ class NapCatFunctionToolsPlugin(Star):
     def __init__(self, context: Context, config: dict = None):
         super().__init__(context)
         self.config = dict(config or {})
-        self.tool_count = 180
+        self.tool_count = 162
         self.tool_registry_records = build_tool_registry_data(type(self))
         self.action_parameter_names = self._build_action_parameter_names()
         self.napcat_tool_names = tuple(
@@ -924,7 +924,6 @@ class NapCatFunctionToolsPlugin(Star):
     def _has_value(self, value) -> bool:
         return value is not None and value != ""
 
-    @filter.llm_tool(name='napcat_arksharegroup')
     async def napcat_arksharegroup_tool(
         self,
         event: AstrMessageEvent,
@@ -947,7 +946,6 @@ Returns:
             event, 'ArkShareGroup', payload, send_group_id, send_user_id
         )
 
-    @filter.llm_tool(name='napcat_arksharepeer')
     async def napcat_arksharepeer_tool(
         self,
         event: AstrMessageEvent,
@@ -1774,7 +1772,54 @@ Returns:
         payload['message_id'] = message_id
         return await self._call_napcat_api(event, 'fetch_emoji_like', payload)
 
-    @filter.llm_tool(name='napcat_forward_friend_single_msg')
+    @filter.llm_tool(name='napcat_forward_single_msg')
+    async def napcat_forward_single_msg_tool(
+        self,
+        event: AstrMessageEvent,
+        message_id: int = None,
+        message_type: str = None,
+        group_id: int = None,
+        user_id: int = None,
+    ):
+        """转发单条消息到群聊或私聊，适合把当前消息、回复消息或历史消息转发给指定群或好友
+
+Args:
+    message_id(int): 可选，消息ID。默认优先使用被回复消息 ID；未回复或解析失败时使用当前消息 ID。
+    message_type(str): 可选，目标类型，支持 `group` 或 `private`；不填时优先根据 group_id/user_id 和当前会话判断。
+    group_id(int): 可选，目标群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会转为私聊转发。
+    user_id(int): 可选，目标用户QQ。默认使用当前消息发送者的用户 ID。
+
+Returns:
+    str: 返回 API 响应的 JSON 字符串。"""
+        normalized_type = (message_type or "").lower()
+        if normalized_type in {"group", "guild"} or group_id is not None:
+            payload: dict = {'message_id': message_id, 'group_id': group_id}
+            if user_id is not None:
+                payload['user_id'] = user_id
+            return await self._call_napcat_api(
+                event, 'forward_group_single_msg', payload
+            )
+
+        if normalized_type == "private" or user_id is not None:
+            payload = {'message_id': message_id, 'user_id': user_id}
+            if group_id is not None:
+                payload['group_id'] = group_id
+            return await self._call_napcat_api(
+                event, 'forward_friend_single_msg', payload
+            )
+
+        if self._get_current_group_id_or_none(event) is not None:
+            return await self._call_napcat_api(
+                event,
+                'forward_group_single_msg',
+                {'message_id': message_id, 'group_id': group_id},
+            )
+        return await self._call_napcat_api(
+            event,
+            'forward_friend_single_msg',
+            {'message_id': message_id, 'user_id': user_id},
+        )
+
     async def napcat_forward_friend_single_msg_tool(
         self,
         event: AstrMessageEvent,
@@ -1798,7 +1843,6 @@ Returns:
             payload['group_id'] = group_id
         return await self._call_napcat_api(event, 'forward_friend_single_msg', payload)
 
-    @filter.llm_tool(name='napcat_forward_group_single_msg')
     async def napcat_forward_group_single_msg_tool(
         self,
         event: AstrMessageEvent,
@@ -1822,7 +1866,6 @@ Returns:
             payload['user_id'] = user_id
         return await self._call_napcat_api(event, 'forward_group_single_msg', payload)
 
-    @filter.llm_tool(name='napcat_friend_poke')
     async def napcat_friend_poke_tool(
         self,
         event: AstrMessageEvent,
@@ -3065,7 +3108,6 @@ Returns:
         payload: dict = {}
         return await self._call_napcat_api(event, 'get_rkey_server', payload)
 
-    @filter.llm_tool(name='napcat_get_robot_uin_range')
     async def napcat_get_robot_uin_range_tool(
         self,
         event: AstrMessageEvent,
@@ -3186,7 +3228,6 @@ Returns:
         payload: dict = {}
         return await self._call_napcat_api(event, 'get_version_info', payload)
 
-    @filter.llm_tool(name='napcat_group_poke')
     async def napcat_group_poke_tool(
         self,
         event: AstrMessageEvent,
@@ -3225,7 +3266,6 @@ Returns:
         payload: dict = {}
         return await self._call_napcat_api(event, '_mark_all_as_read', payload)
 
-    @filter.llm_tool(name='napcat_mark_group_msg_as_read')
     async def napcat_mark_group_msg_as_read_tool(
         self,
         event: AstrMessageEvent,
@@ -3276,7 +3316,6 @@ Returns:
             payload['user_id'] = user_id
         return await self._call_napcat_api(event, 'mark_msg_as_read', payload)
 
-    @filter.llm_tool(name='napcat_mark_private_msg_as_read')
     async def napcat_mark_private_msg_as_read_tool(
         self,
         event: AstrMessageEvent,
@@ -3330,7 +3369,6 @@ Returns:
             payload['target_parent_directory'] = target_parent_directory
         return await self._call_napcat_api(event, 'move_group_file', payload)
 
-    @filter.llm_tool(name='napcat_nc_get_packet_status')
     async def napcat_nc_get_packet_status_tool(
         self,
         event: AstrMessageEvent,
@@ -3345,7 +3383,6 @@ Returns:
         payload: dict = {}
         return await self._call_napcat_api(event, 'nc_get_packet_status', payload)
 
-    @filter.llm_tool(name='napcat_nc_get_rkey')
     async def napcat_nc_get_rkey_tool(
         self,
         event: AstrMessageEvent,
@@ -3460,7 +3497,6 @@ Returns:
         payload['user_id'] = user_id
         return await self._call_napcat_api(event, 'refuse_online_file', payload)
 
-    @filter.llm_tool(name='napcat_reload_event_filter')
     async def napcat_reload_event_filter_tool(
         self,
         event: AstrMessageEvent,
@@ -3671,7 +3707,6 @@ Returns:
             event, 'send_group_ark_share', payload, send_group_id, send_user_id
         )
 
-    @filter.llm_tool(name='napcat_send_group_forward_msg')
     async def napcat_send_group_forward_msg_tool(
         self,
         event: AstrMessageEvent,
@@ -3728,7 +3763,6 @@ Returns:
             payload['user_id'] = user_id
         return await self._call_napcat_api(event, 'send_group_forward_msg', payload)
 
-    @filter.llm_tool(name='napcat_send_group_msg')
     async def napcat_send_group_msg_tool(
         self,
         event: AstrMessageEvent,
@@ -3992,7 +4026,6 @@ Returns:
             payload['folder_name'] = folder_name
         return await self._call_napcat_api(event, 'send_online_folder', payload)
 
-    @filter.llm_tool(name='napcat_send_packet')
     async def napcat_send_packet_tool(
         self,
         event: AstrMessageEvent,
@@ -4045,7 +4078,6 @@ Returns:
             payload['group_id'] = group_id
         return await self._call_napcat_api(event, 'send_poke', payload)
 
-    @filter.llm_tool(name='napcat_send_private_forward_msg')
     async def napcat_send_private_forward_msg_tool(
         self,
         event: AstrMessageEvent,
@@ -4102,7 +4134,6 @@ Returns:
             payload['timeout'] = timeout
         return await self._call_napcat_api(event, 'send_private_forward_msg', payload)
 
-    @filter.llm_tool(name='napcat_send_private_msg')
     async def napcat_send_private_msg_tool(
         self,
         event: AstrMessageEvent,
@@ -4972,7 +5003,6 @@ Returns:
             payload['longNick'] = longNick
         return await self._call_napcat_api(event, 'set_self_longnick', payload)
 
-    @filter.llm_tool(name='napcat_test_download_stream')
     async def napcat_test_download_stream_tool(
         self,
         event: AstrMessageEvent,
@@ -5031,7 +5061,6 @@ Returns:
     #         payload['words'] = words
     #     return await self._call_napcat_api(event, 'translate_en2zh', payload)
 
-    @filter.llm_tool(name='napcat_unknown')
     async def napcat_unknown_tool(
         self,
         event: AstrMessageEvent,

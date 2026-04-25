@@ -916,6 +916,23 @@ def test_search_candidate_limit_uses_config_with_default_and_minimum():
     assert plugin._get_search_candidate_limit() == 10
 
 
+def test_discovered_tool_limit_uses_config_with_default_and_minimum():
+    plugin = NapCatFunctionToolsPlugin(context=FakeContext([]))
+    assert plugin._get_discovered_tool_limit() == 20
+
+    plugin.config["discovered_tool_limit"] = 7
+    assert plugin._get_discovered_tool_limit() == 7
+
+    plugin.config["discovered_tool_limit"] = "3"
+    assert plugin._get_discovered_tool_limit() == 3
+
+    plugin.config["discovered_tool_limit"] = 0
+    assert plugin._get_discovered_tool_limit() == 1
+
+    plugin.config["discovered_tool_limit"] = "invalid"
+    assert plugin._get_discovered_tool_limit() == 20
+
+
 @pytest.mark.asyncio
 async def test_on_llm_request_injects_discovered_tools_as_request_scope_copies():
     source_tool = make_function_tool("napcat_send_group_msg", active=False)
@@ -983,7 +1000,8 @@ async def test_search_tool_discovers_persists_and_immediately_injects_tools():
     send_group_tool = make_function_tool("napcat_send_group_msg", active=False)
     get_group_tool = make_function_tool("napcat_get_group_list", active=False)
     plugin = NapCatFunctionToolsPlugin(
-        context=FakeContext([send_group_tool, get_group_tool])
+        context=FakeContext([send_group_tool, get_group_tool]),
+        config={"discovered_tool_limit": 1},
     )
     db_path = (
         Path(__file__).resolve().parents[1]
@@ -1013,7 +1031,8 @@ async def test_search_tool_discovers_persists_and_immediately_injects_tools():
         assert 1 <= len(payload["matched_tools"]) <= 3
         assert payload["injected_count"] >= 1
         assert req.func_tool.get_tool("napcat_send_group_msg") is not None
-        assert len(await plugin.tool_registry_repo.list_discovered_tool_names()) <= 20
+        assert payload["max_discovered_tools"] == 1
+        assert len(await plugin.tool_registry_repo.list_discovered_tool_names()) <= 1
     finally:
         await plugin.tool_db.close()
         for suffix in ("", "-wal", "-shm"):

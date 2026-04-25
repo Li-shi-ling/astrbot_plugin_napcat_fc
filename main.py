@@ -31,7 +31,7 @@ from napcat_fc.tool_registry import build_tool_registry_data
     "astrbot_plugin_napcat_fc",
     "Soulter / AstrBot contributors",
     "将 NapCat / OneBot / go-cqhttp API 注册为 AstrBot 函数工具。",
-    "1.15.7",
+    "1.15.8",
 )
 class NapCatFunctionToolsPlugin(Star):
     SEARCH_TOOL_NAME = "napcat_search_tools"
@@ -234,9 +234,10 @@ class NapCatFunctionToolsPlugin(Star):
                 matched_count=len(matched_names),
                 matched_tools=matched_names,
             )
+            discovered_tool_limit = self._get_discovered_tool_limit()
             queue = await self.tool_registry_repo.add_discovered_tool_names(
                 matched_names,
-                max_size=self.DISCOVERED_TOOL_LIMIT,
+                max_size=discovered_tool_limit,
             )
             self._debug_log(
                 "search_tool:queue_updated",
@@ -264,7 +265,7 @@ class NapCatFunctionToolsPlugin(Star):
                     "injected_tools": matched_names,
                     "injected_count": injected_count,
                     "discovered_tool_count": len(queue),
-                    "max_discovered_tools": self.DISCOVERED_TOOL_LIMIT,
+                    "max_discovered_tools": discovered_tool_limit,
                     "skipped_discovered_tools": sorted(skipped_discovered_names),
                 },
                 ensure_ascii=False,
@@ -317,6 +318,14 @@ class NapCatFunctionToolsPlugin(Star):
             limit = int(raw_limit)
         except (TypeError, ValueError):
             return self.SEARCH_CANDIDATE_LIMIT
+        return max(1, limit)
+
+    def _get_discovered_tool_limit(self) -> int:
+        raw_limit = self.config.get("discovered_tool_limit", self.DISCOVERED_TOOL_LIMIT)
+        try:
+            limit = int(raw_limit)
+        except (TypeError, ValueError):
+            return self.DISCOVERED_TOOL_LIMIT
         return max(1, limit)
 
     async def _search_tool_candidates(

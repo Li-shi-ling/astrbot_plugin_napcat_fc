@@ -54,13 +54,16 @@ class SlowApi:
 
 
 class ArkApi:
-    def __init__(self, ark_data='{"app":"com.tencent.contact.lua"}'):
+    def __init__(self, ark_data='{"app":"com.tencent.contact.lua"}', direct_ark=False):
         self.ark_data = ark_data
+        self.direct_ark = direct_ark
         self.calls = []
 
     async def call_action(self, action, **payload):
         self.calls.append((action, payload))
         if action in {"ArkShareGroup", "ArkSharePeer", "send_ark_share", "send_group_ark_share"}:
+            if self.direct_ark:
+                return self.ark_data
             return {"status": "ok", "data": self.ark_data}
         return {"status": "ok", "data": payload}
 
@@ -722,6 +725,34 @@ async def test_ark_share_tools_auto_send_to_current_group_when_target_omitted():
                 "group_id": 654321,
                 "message": [{"type": "json", "data": {"data": ark_json}}],
                 "user_id": 123456,
+            },
+        ),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_ark_share_tools_auto_send_direct_ark_json_string():
+    event = make_aiocqhttp_event(group_id="654321", user_id="123456")
+    ark_json = '{"app":"com.tencent.contact.lua","prompt":"group card"}'
+    event.bot.api = ArkApi(ark_data=ark_json, direct_ark=True)
+    plugin = NapCatFunctionToolsPlugin(context=None)
+
+    result = await plugin.napcat_send_group_ark_share_tool(
+        event,
+        group_id=651906887,
+        send_user_id=3527679745,
+    )
+    payload = json.loads(result)
+
+    assert payload["status"] == "ok"
+    assert event.bot.api.calls == [
+        ("send_group_ark_share", {"group_id": 651906887}),
+        (
+            "send_private_msg",
+            {
+                "group_id": 654321,
+                "message": [{"type": "json", "data": {"data": ark_json}}],
+                "user_id": 3527679745,
             },
         ),
     ]

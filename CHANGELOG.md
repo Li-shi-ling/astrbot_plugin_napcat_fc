@@ -1,5 +1,10 @@
 ﻿# 更新日志
 
+## v1.15.7 - 2026-04-25
+
+- 修复 Ark 分享自动发送兼容性：支持 NapCat 直接返回 Ark JSON 字符串或 Ark JSON 对象的情况，不再只要求返回值包含顶层 `data` 字段。
+- 新增回归测试覆盖 `send_group_ark_share` 直接返回 Ark JSON 字符串时的自动发送路径。
+
 ## v1.15.6 - 2026-04-25
 
 - `napcat_send_group_ark_share`、`napcat_send_ark_share`、`napcat_arksharegroup` 和 `napcat_arksharepeer` 改为自动发送 Ark 卡片，不再要求 LLM 二次调用消息发送工具。

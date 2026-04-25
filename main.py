@@ -31,7 +31,7 @@ from napcat_fc.tool_registry import build_tool_registry_data
     "astrbot_plugin_napcat_fc",
     "Soulter / AstrBot contributors",
     "将 NapCat / OneBot / go-cqhttp API 注册为 AstrBot 函数工具。",
-    "1.15.6",
+    "1.15.7",
 )
 class NapCatFunctionToolsPlugin(Star):
     SEARCH_TOOL_NAME = "napcat_search_tools"
@@ -562,7 +562,7 @@ class NapCatFunctionToolsPlugin(Star):
                 ensure_ascii=False,
             )
 
-        ark_data = ark_result.get("data") if isinstance(ark_result, dict) else None
+        ark_data = self._extract_ark_message_data(ark_result)
         if ark_data is None:
             return json.dumps(
                 {
@@ -620,6 +620,34 @@ class NapCatFunctionToolsPlugin(Star):
             ensure_ascii=False,
             default=str,
         )
+
+    def _extract_ark_message_data(self, ark_result):
+        if isinstance(ark_result, dict):
+            if ark_result.get("data") is not None:
+                data = ark_result["data"]
+                return json.dumps(data, ensure_ascii=False) if isinstance(data, dict) else data
+            if self._looks_like_ark_payload(ark_result):
+                return json.dumps(ark_result, ensure_ascii=False)
+            return None
+        if isinstance(ark_result, str):
+            text = ark_result.strip()
+            if not text:
+                return None
+            try:
+                parsed = json.loads(text)
+            except json.JSONDecodeError:
+                return text
+            if isinstance(parsed, dict):
+                if parsed.get("data") is not None:
+                    data = parsed["data"]
+                    return json.dumps(data, ensure_ascii=False) if isinstance(data, dict) else data
+                if self._looks_like_ark_payload(parsed):
+                    return text
+            return text
+        return None
+
+    def _looks_like_ark_payload(self, payload: dict) -> bool:
+        return any(key in payload for key in ("app", "meta", "view", "ver", "prompt"))
 
     def _resolve_ark_send_targets(
         self,

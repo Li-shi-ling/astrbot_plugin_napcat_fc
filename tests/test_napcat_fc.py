@@ -12,6 +12,7 @@ import pytest
 
 import astrbot.api  # noqa: F401
 from astrbot.core.platform.astrbot_message import AstrBotMessage, MessageMember
+from astrbot.core.message.components import Reply
 from astrbot.core.platform.message_type import MessageType
 from astrbot.core.platform.platform_metadata import PlatformMetadata
 from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import (
@@ -77,17 +78,19 @@ def make_aiocqhttp_event(
     group_id: str | None = None,
     user_id: str = "123456",
     message_id: str = "1",
+    message_components: list | None = None,
+    raw_message=None,
 ):
     message = AstrBotMessage()
     message.type = MessageType.GROUP_MESSAGE if group_id else MessageType.FRIEND_MESSAGE
-    message.message = []
+    message.message = list(message_components or [])
     message.message_str = ""
     message.sender = MessageMember(user_id=user_id, nickname="tester")
     message.self_id = "10000"
     message.message_id = message_id
     message.group_id = group_id
     message.session_id = group_id or user_id
-    message.raw_message = None
+    message.raw_message = raw_message
     return AiocqhttpMessageEvent(
         message_str="",
         message_obj=message,
@@ -215,6 +218,44 @@ def test_context_defaults_fill_values_from_aiocqhttp_event():
     }
 
 
+def test_message_id_default_prefers_reply_component_then_current_message():
+    event = make_aiocqhttp_event(
+        group_id="654321",
+        message_id="789",
+        message_components=[Reply(id="456")],
+    )
+    plugin = NapCatFunctionToolsPlugin(context=None)
+    payload = {"message_id": None}
+
+    assert plugin._fill_context_defaults(event, payload) is None
+    assert payload["message_id"] == 456
+
+    event.message_obj.message = []
+    payload = {"message_id": None}
+
+    assert plugin._fill_context_defaults(event, payload) is None
+    assert payload["message_id"] == 789
+
+
+def test_message_id_default_reads_raw_onebot_reply_segment():
+    raw_message = SimpleNamespace(
+        message=[
+            {"type": "reply", "data": {"id": "456"}},
+            {"type": "text", "data": {"text": "设置待办"}},
+        ]
+    )
+    event = make_aiocqhttp_event(
+        group_id="654321",
+        message_id="789",
+        raw_message=raw_message,
+    )
+    plugin = NapCatFunctionToolsPlugin(context=None)
+    payload = {"message_id": None}
+
+    assert plugin._fill_context_defaults(event, payload) is None
+    assert payload["message_id"] == 456
+
+
 @pytest.mark.asyncio
 async def test_group_context_default_returns_friendly_message_in_private_chat():
     event = make_aiocqhttp_event(user_id="123456")
@@ -244,6 +285,26 @@ async def test_group_tool_uses_current_group_when_group_id_is_omitted():
         (
             "send_group_msg",
             {"group_id": 654321, "message": "hello", "user_id": 123456},
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_group_todo_uses_replied_message_id_when_message_id_is_omitted():
+    event = make_aiocqhttp_event(
+        group_id="654321",
+        user_id="123456",
+        message_id="789",
+        message_components=[Reply(id="456")],
+    )
+    plugin = NapCatFunctionToolsPlugin(context=None)
+
+    await plugin.napcat_set_group_todo_tool(event)
+
+    assert event.bot.api.calls == [
+        (
+            "set_group_todo",
+            {"group_id": 654321, "message_id": 456},
         )
     ]
 

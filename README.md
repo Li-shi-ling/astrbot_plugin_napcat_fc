@@ -21,7 +21,7 @@
 - `group_id`：默认使用当前群聊的群号，即 `event.get_group_id()`。
 - `user_id`：默认使用当前消息发送者 ID，即 `event.get_sender_id()`。
 - `self_id`：默认使用当前机器人账号 ID，即 `event.get_self_id()`。
-- `message_id`：默认使用当前消息 ID，即 `event.message_obj.message_id`。
+- `message_id`：默认优先使用当前消息中的回复目标消息 ID；如果当前消息不是回复，或回复目标解析失败，则回退为当前消息 ID，即 `event.message_obj.message_id`。
 
 如果在私聊中调用需要群号的群聊工具，且没有显式提供 `group_id`，工具不会请求 NapCat API，而是返回 LLM 可读的 JSON 提示，说明当前消息不是群聊事件并要求提供群号或改用私聊工具。
 

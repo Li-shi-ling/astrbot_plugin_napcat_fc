@@ -31,7 +31,7 @@ from napcat_fc.tool_registry import build_tool_registry_data
     "astrbot_plugin_napcat_fc",
     "Soulter / AstrBot contributors",
     "将 NapCat / OneBot / go-cqhttp API 注册为 AstrBot 函数工具。",
-    "1.14.8",
+    "1.14.9",
 )
 class NapCatFunctionToolsPlugin(Star):
     SEARCH_TOOL_NAME = "napcat_search_tools"
@@ -521,6 +521,7 @@ class NapCatFunctionToolsPlugin(Star):
         parameter_names = self.action_parameter_names.get(action, set())
         has_user_id = "user_id" in parameter_names
         has_group_id = "group_id" in parameter_names
+        has_message_id = "message_id" in parameter_names
 
         if has_user_id and payload.get("user_id") is None and "target_id" in payload:
             target_id = payload.pop("target_id")
@@ -536,6 +537,9 @@ class NapCatFunctionToolsPlugin(Star):
             group_id = self._get_current_group_id_or_none(event)
             if group_id is not None:
                 payload["group_id"] = group_id
+
+        if has_message_id and "message_id" not in payload:
+            payload["message_id"] = None
 
     def _fill_context_defaults(
         self,
@@ -561,7 +565,7 @@ class NapCatFunctionToolsPlugin(Star):
             payload["self_id"] = int(self_id) if str(self_id).isdigit() else self_id
 
         if payload.get("message_id", None) is None and "message_id" in payload:
-            message_id = getattr(event.message_obj, "message_id", "")
+            message_id = self._get_default_message_id(event)
             if not message_id:
                 return "当前消息无法自动获取 message_id。请明确提供消息 ID。"
             payload["message_id"] = (
@@ -569,6 +573,39 @@ class NapCatFunctionToolsPlugin(Star):
             )
 
         return None
+
+    def _get_default_message_id(self, event: AiocqhttpMessageEvent):
+        reply_message_id = self._get_replied_message_id(event)
+        if self._has_value(reply_message_id):
+            return reply_message_id
+        return getattr(event.message_obj, "message_id", "")
+
+    def _get_replied_message_id(self, event: AiocqhttpMessageEvent):
+        message_obj = getattr(event, "message_obj", None)
+        for component in getattr(message_obj, "message", []) or []:
+            component_type = str(getattr(component, "type", "")).lower()
+            if component_type.endswith("reply"):
+                reply_id = getattr(component, "id", None)
+                if self._has_value(reply_id):
+                    return reply_id
+
+        raw_message = getattr(message_obj, "raw_message", None)
+        raw_segments = getattr(raw_message, "message", None)
+        if not isinstance(raw_segments, list):
+            return None
+        for segment in raw_segments:
+            if not isinstance(segment, dict) or segment.get("type") != "reply":
+                continue
+            data = segment.get("data") or {}
+            if not isinstance(data, dict):
+                continue
+            reply_id = data.get("id") or data.get("message_id")
+            if self._has_value(reply_id):
+                return reply_id
+        return None
+
+    def _has_value(self, value) -> bool:
+        return value is not None and value != ""
 
     @filter.llm_tool(name='napcat_arksharegroup')
     async def napcat_arksharegroup_tool(
@@ -674,7 +711,7 @@ Returns:
 
 Args:
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
-    message_id(int): 可选，消息ID。
+    message_id(int): 可选，消息ID。默认优先使用被回复消息 ID；未回复或解析失败时使用当前消息 ID。
     message_seq(int): 可选，消息Seq (可选)。
 
 Returns:
@@ -801,7 +838,7 @@ Returns:
 
 Args:
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
-    message_id(int): 可选，消息ID。
+    message_id(int): 可选，消息ID。默认优先使用被回复消息 ID；未回复或解析失败时使用当前消息 ID。
     message_seq(int): 可选，消息Seq (可选)。
 
 Returns:
@@ -983,7 +1020,7 @@ Returns:
         """能力: 删除群精华消息 (API: /delete_essence_msg).
 
 Args:
-    message_id(int): 可选，消息ID。默认使用当前消息 ID。
+    message_id(int): 可选，消息ID。默认优先使用被回复消息 ID；未回复或解析失败时使用当前消息 ID。
     group_id(int): 可选，群号。
     msg_random(str): 可选，消息随机数。
     msg_seq(int): 可选，消息序号。
@@ -1110,7 +1147,7 @@ Returns:
         """能力: 撤回已发送的消息 (API: /delete_msg).
 
 Args:
-    message_id(int): 可选，消息 ID。默认使用当前消息 ID。
+    message_id(int): 可选，消息 ID。默认优先使用被回复消息 ID；未回复或解析失败时使用当前消息 ID。
 
 Returns:
     str: 返回 API 响应的 JSON 字符串。"""
@@ -1392,7 +1429,7 @@ Args:
     count(int): 必填，获取数量。
     emojiId(str): 必填，表情ID。
     emojiType(str): 必填，表情类型。
-    message_id(int): 可选，消息ID。默认使用当前消息 ID。
+    message_id(int): 可选，消息ID。默认优先使用被回复消息 ID；未回复或解析失败时使用当前消息 ID。
 
 Returns:
     str: 返回 API 响应的 JSON 字符串。"""
@@ -1419,7 +1456,7 @@ Returns:
         """能力: 消息转发到私聊 (API: /forward_friend_single_msg).
 
 Args:
-    message_id(int): 可选，消息ID。默认使用当前消息 ID。
+    message_id(int): 可选，消息ID。默认优先使用被回复消息 ID；未回复或解析失败时使用当前消息 ID。
     user_id(int): 可选，目标用户QQ。默认使用当前消息发送者的用户 ID。
     group_id(int): 可选，目标群号。
 
@@ -1444,7 +1481,7 @@ Returns:
 
 Args:
     group_id(int): 可选，目标群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
-    message_id(int): 可选，消息ID。默认使用当前消息 ID。
+    message_id(int): 可选，消息ID。默认优先使用被回复消息 ID；未回复或解析失败时使用当前消息 ID。
     user_id(int): 可选，目标用户QQ。
 
 Returns:
@@ -1650,7 +1687,7 @@ Returns:
 Args:
     count(int): 必填，数量，0代表全部。
     emoji_id(int): 必填，表情ID。
-    message_id(int): 可选，消息ID，可以传递长ID或短ID。默认使用当前消息 ID。
+    message_id(int): 可选，消息ID，可以传递长ID或短ID。默认优先使用被回复消息 ID；未回复或解析失败时使用当前消息 ID。
     emoji_type(int): 可选，表情类型。
     group_id(int): 可选，群号，短ID可不传。
 
@@ -1797,7 +1834,7 @@ Returns:
         """能力: 获取合并转发消息的具体内容 (API: /get_forward_msg).
 
 Args:
-    message_id(int): 可选，消息ID。默认使用当前消息 ID。
+    message_id(int): 可选，消息ID。默认优先使用被回复消息 ID；未回复或解析失败时使用当前消息 ID。
     id(str): 可选，合并转发 ID。
 
 Returns:
@@ -2395,7 +2432,7 @@ Returns:
         """能力: 获取频道消息 (API: /get_guild_msg).
 
 Args:
-    message_id(int): 可选，频道消息ID。默认使用当前消息 ID。
+    message_id(int): 可选，频道消息ID。默认优先使用被回复消息 ID；未回复或解析失败时使用当前消息 ID。
     no_cache(bool): 可选，是否不使用缓存（使用缓存可能更新不及时, 但响应更快） 默认值: false。
 
 Returns:
@@ -2518,7 +2555,7 @@ Returns:
         """能力: 根据消息 ID 获取消息详细信息 (API: /get_msg).
 
 Args:
-    message_id(int): 可选，消息 ID。默认使用当前消息 ID。
+    message_id(int): 可选，消息 ID。默认优先使用被回复消息 ID；未回复或解析失败时使用当前消息 ID。
 
 Returns:
     str: 返回 API 响应的 JSON 字符串。"""
@@ -2872,7 +2909,7 @@ Returns:
 
 Args:
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
-    message_id(int): 可选，消息ID。
+    message_id(int): 可选，消息ID。默认优先使用被回复消息 ID；未回复或解析失败时使用当前消息 ID。
     user_id(int): 可选，用户QQ。
 
 Returns:
@@ -2897,7 +2934,7 @@ Returns:
 
 Args:
     group_id(int): 可选，与user_id二选一。
-    message_id(int): 可选，消息ID。
+    message_id(int): 可选，消息ID。默认优先使用被回复消息 ID；未回复或解析失败时使用当前消息 ID。
     user_id(int): 可选，与user_id二选一。
 
 Returns:
@@ -2924,7 +2961,7 @@ Returns:
 Args:
     user_id(int): 可选，用户QQ。默认使用当前消息发送者的用户 ID。
     group_id(int): 可选，群号。
-    message_id(int): 可选，消息ID。
+    message_id(int): 可选，消息ID。默认优先使用被回复消息 ID；未回复或解析失败时使用当前消息 ID。
 
 Returns:
     str: 返回 API 响应的 JSON 字符串。"""
@@ -3834,7 +3871,7 @@ Returns:
         """能力: 将一条消息设置为群精华消息 (API: /set_essence_msg).
 
 Args:
-    message_id(int): 可选，消息ID。默认使用当前消息 ID。
+    message_id(int): 可选，消息ID。默认优先使用被回复消息 ID；未回复或解析失败时使用当前消息 ID。
 
 Returns:
     str: 返回 API 响应的 JSON 字符串。"""
@@ -4350,7 +4387,7 @@ Returns:
 
 Args:
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
-    message_id(int): 可选，消息ID。默认使用当前消息 ID。
+    message_id(int): 可选，消息ID。默认优先使用被回复消息 ID；未回复或解析失败时使用当前消息 ID。
     message_seq(int): 可选，消息Seq (可选)。
 
 Returns:
@@ -4468,7 +4505,7 @@ Returns:
 
 Args:
     emoji_id(int): 必填，表情ID。
-    message_id(int): 可选，消息ID。默认使用当前消息 ID。
+    message_id(int): 可选，消息ID。默认优先使用被回复消息 ID；未回复或解析失败时使用当前消息 ID。
     set(bool): 必填，是否设置。
 
 Returns:

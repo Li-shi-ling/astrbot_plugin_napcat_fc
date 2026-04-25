@@ -4,6 +4,7 @@ import json
 import re
 import subprocess
 import sys
+import asyncio
 import uuid
 from pathlib import Path
 from types import SimpleNamespace
@@ -39,6 +40,17 @@ class FakeApi:
 class FakeBot:
     def __init__(self):
         self.api = FakeApi()
+
+
+class SlowApi:
+    def __init__(self, delay: float):
+        self.delay = delay
+        self.calls = []
+
+    async def call_action(self, action, **payload):
+        self.calls.append((action, payload))
+        await asyncio.sleep(self.delay)
+        return {"status": "ok", "data": payload}
 
 
 class FakeToolManager:
@@ -588,6 +600,32 @@ async def test_aiocqhttp_action_accepts_slash_endpoint():
     assert event.bot.api.calls == [("send_msg", {"message": "hello", "user_id": 123456})]
 
 
+@pytest.mark.asyncio
+async def test_call_napcat_api_can_timeout_action_when_requested():
+    event = make_aiocqhttp_event()
+    event.bot.api = SlowApi(delay=1.1)
+    plugin = NapCatFunctionToolsPlugin(context=None)
+
+    result = await plugin._call_napcat_api(
+        event,
+        "get_group_list",
+        {},
+        timeout_seconds=1,
+    )
+    payload = json.loads(result)
+
+    assert payload["status"] == "api_timeout"
+    assert payload["endpoint"] == "get_group_list"
+    assert event.bot.api.calls == [("get_group_list", {})]
+
+
+def test_translate_en2zh_tool_is_disabled_for_current_napcat_version():
+    records = build_tool_registry_data(NapCatFunctionToolsPlugin)
+
+    assert not hasattr(NapCatFunctionToolsPlugin, "napcat_translate_en2zh_tool")
+    assert "napcat_translate_en2zh" not in {record.tool_name for record in records}
+
+
 def test_tool_name_keeps_internal_dot_endpoint_distinct():
     assert make_tool_name("napcat", ".ocr_image") == "napcat_dot_ocr_image"
     assert make_tool_name("napcat", "ocr_image") == "napcat_ocr_image"
@@ -607,7 +645,7 @@ def test_build_tool_registry_data_extracts_tool_discovery_metadata():
     records = build_tool_registry_data(NapCatFunctionToolsPlugin)
     by_name = {record.tool_name: record for record in records}
 
-    assert len(records) == 182
+    assert len(records) == 181
     assert by_name["napcat_send_group_msg"].endpoint == "send_group_msg"
     assert by_name["napcat_send_group_msg"].method_name == "napcat_send_group_msg_tool"
     assert "发送群消息" in by_name["napcat_send_group_msg"].capability

@@ -31,7 +31,7 @@ from napcat_fc.tool_registry import build_tool_registry_data
     "astrbot_plugin_napcat_fc",
     "Soulter / AstrBot contributors",
     "将 NapCat / OneBot / go-cqhttp API 注册为 AstrBot 函数工具。",
-    "1.15.0",
+    "1.15.1",
 )
 class NapCatFunctionToolsPlugin(Star):
     SEARCH_TOOL_NAME = "napcat_search_tools"
@@ -57,7 +57,7 @@ class NapCatFunctionToolsPlugin(Star):
     def __init__(self, context: Context, config: dict = None):
         super().__init__(context)
         self.config = dict(config or {})
-        self.tool_count = 182
+        self.tool_count = 181
         self.tool_registry_records = build_tool_registry_data(type(self))
         self.action_parameter_names = self._build_action_parameter_names()
         self.napcat_tool_names = tuple(
@@ -464,6 +464,7 @@ class NapCatFunctionToolsPlugin(Star):
         event: AstrMessageEvent,
         endpoint: str,
         payload: dict = None,
+        timeout_seconds: float | None = None,
     ) -> str:
         if not isinstance(event, AiocqhttpMessageEvent):
             raise ValueError("NapCat tools require an aiocqhttp/NapCat message event.")
@@ -505,7 +506,28 @@ class NapCatFunctionToolsPlugin(Star):
         call_action = getattr(api, "call_action", None) or getattr(bot, "call_action", None)
         if not call_action:
             raise RuntimeError("Current aiocqhttp bot does not support call_action.")
-        result = await call_action(action, **payload)
+        try:
+            if timeout_seconds is None:
+                result = await call_action(action, **payload)
+            else:
+                result = await asyncio.wait_for(
+                    call_action(action, **payload),
+                    timeout=float(timeout_seconds),
+                )
+        except TimeoutError:
+            return json.dumps(
+                {
+                    "status": "api_timeout",
+                    "retcode": 1408,
+                    "data": None,
+                    "message": (
+                        f"NapCat API '{action}' did not respond within "
+                        f"{float(timeout_seconds):g} seconds."
+                    ),
+                    "endpoint": action,
+                },
+                ensure_ascii=False,
+            )
         return self._format_napcat_return_message(action, result)
 
     def _is_information_action(self, action: str) -> bool:
@@ -4776,23 +4798,25 @@ Returns:
         payload['group_id'] = group_id
         return await self._call_napcat_api(event, 'trans_group_file', payload)
 
-    @filter.llm_tool(name='napcat_translate_en2zh')
-    async def napcat_translate_en2zh_tool(
-        self,
-        event: AstrMessageEvent,
-        words: list,
-    ):
-        """能力: 将英文单词列表翻译为中文 (API: /translate_en2zh).
-
-Args:
-    words(list): 必填，待翻译单词列表。
-
-Returns:
-    str: 返回 API 响应的 JSON 字符串。"""
-        payload: dict = {}
-        if words is not None:
-            payload['words'] = words
-        return await self._call_napcat_api(event, 'translate_en2zh', payload)
+    # @filter.llm_tool(name='napcat_translate_en2zh')
+    # async def napcat_translate_en2zh_tool(
+    #     self,
+    #     event: AstrMessageEvent,
+    #     words: list,
+    # ):
+    #     """能力: 将英文单词列表翻译为中文 (API: /translate_en2zh).
+    #
+    # Args:
+    #     words(list): 必填，待翻译单词列表。
+    #
+    # Returns:
+    #     str: 返回 API 响应的 JSON 字符串。"""
+    #     payload: dict = {}
+    #     if words is not None:
+    #         if isinstance(words, str):
+    #             words = [words]
+    #         payload['words'] = words
+    #     return await self._call_napcat_api(event, 'translate_en2zh', payload)
 
     @filter.llm_tool(name='napcat_unknown')
     async def napcat_unknown_tool(

@@ -31,7 +31,7 @@ from napcat_fc.tool_registry import build_tool_registry_data
     "astrbot_plugin_napcat_fc",
     "Soulter / AstrBot contributors",
     "将 NapCat / OneBot / go-cqhttp API 注册为 AstrBot 函数工具。",
-    "1.15.8",
+    "1.15.9",
 )
 class NapCatFunctionToolsPlugin(Star):
     SEARCH_TOOL_NAME = "napcat_search_tools"
@@ -292,8 +292,9 @@ class NapCatFunctionToolsPlugin(Star):
                 "合并转发和历史消息、群成员和群管理、好友和请求处理、"
                 "群文件和文件下载、图片/语音/OCR、表情和收藏、账号状态、"
                 "频道/频道身份组、资料查询、缓存清理和 NapCat 扩展接口。"
-                "当你不知道具体 NapCat 工具名时，先调用本工具搜索关键词，"
-                "再使用返回并已注入的具体工具。"
+                "当当前可用工具列表中没有明确可以完成用户目标的 NapCat 工具时，"
+                "必须先调用本工具进行工具发现；也可以在不知道具体 NapCat 工具名时调用。"
+                "搜索后再使用返回并已注入的具体工具。"
             ),
             handler=search_handler,
         )

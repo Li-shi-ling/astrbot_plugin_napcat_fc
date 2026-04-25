@@ -1025,6 +1025,8 @@ async def test_search_tool_discovers_persists_and_immediately_injects_tools():
         assert search_tool is not None
         assert "消息发送与撤回" in search_tool.description
         assert "群管理" in search_tool.description
+        assert "当前可用工具列表中没有明确可以完成用户目标" in search_tool.description
+        assert "必须先调用本工具进行工具发现" in search_tool.description
         result = await search_tool.handler(make_aiocqhttp_event(), keyword="群")
         payload = json.loads(result)
 

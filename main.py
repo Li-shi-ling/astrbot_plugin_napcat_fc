@@ -31,7 +31,7 @@ from napcat_fc.tool_registry import build_tool_registry_data
     "astrbot_plugin_napcat_fc",
     "Soulter / AstrBot contributors",
     "将 NapCat / OneBot / go-cqhttp API 注册为 AstrBot 函数工具。",
-    "1.15.14",
+    "1.15.15",
 )
 class NapCatFunctionToolsPlugin(Star):
     SEARCH_TOOL_NAME = "napcat_search_tools"
@@ -3876,7 +3876,7 @@ Returns:
         times: int,
         user_id: int = None,
     ):
-        """给指定用户点赞
+        """给用户资料卡点赞，适合对 QQ 用户点赞、名片点赞、主页互动和好友点赞任务
 
 Args:
     times(int): 必填，赞的次数，每个好友每天最多 10 次 默认值: 1。
@@ -3905,7 +3905,7 @@ Returns:
         summary: str = None,
         timeout: int = None,
     ):
-        """send_msg
+        """发送消息到群聊或私聊，适合自动按目标类型发送文本、图片、语音、表情、JSON 和消息段
 
 Args:
     group_id(int): 可选，群号 ( 消息类型为 `group` 时需要 )。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
@@ -3950,7 +3950,7 @@ Returns:
         user_id: int = None,
         file_name: str = None,
     ):
-        """发送在线文件
+        """发送在线文件给用户，适合向好友传输本地文件、临时文件和在线文件任务
 
 Args:
     file_path(str): 必填，本地文件路径。
@@ -3975,7 +3975,7 @@ Returns:
         user_id: int = None,
         folder_name: str = None,
     ):
-        """发送在线文件夹
+        """发送在线文件夹给用户，适合批量传输目录、文件夹资源和多文件在线传输
 
 Args:
     folder_path(str): 必填，本地文件夹路径。
@@ -4000,7 +4000,7 @@ Returns:
         data: str,
         rsp: str,
     ):
-        """发送原始数据包
+        """发送底层原始数据包，适合协议调试、Packet 测试、低层接口实验和高级诊断
 
 Args:
     cmd(str): 必填，命令字。
@@ -4026,7 +4026,7 @@ Returns:
         group_id: int = None,
         target_id: int = None,
     ):
-        """在群聊或私聊中发送戳一戳动作
+        """发送戳一戳到群聊或私聊，适合提醒用户、拍一拍、poke 和轻互动动作
 
 Args:
     user_id(int): 可选，要戳的 QQ 号。默认使用当前消息发送者的用户 ID。
@@ -4061,7 +4061,7 @@ Returns:
         summary: str = None,
         timeout: int = None,
     ):
-        """发送私聊合并转发消息
+        """发送私聊合并转发消息，适合向好友发送聊天记录、多节点消息和聚合转发内容
 
 Args:
     message(str): 必填，See source API docs。
@@ -4117,7 +4117,7 @@ Returns:
         summary: str = None,
         timeout: int = None,
     ):
-        """send_private_msg
+        """发送私聊消息，适合向指定用户发送文本、图片、语音、表情、JSON、回复和消息段
 
 Args:
     group_id(int): 可选，主动发起临时会话时的来源群号(可选, 机器人本身必须是管理员/群主)。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
@@ -4162,7 +4162,7 @@ Returns:
         face_type: str,
         wording: str,
     ):
-        """设置自定义在线状态
+        """设置自定义在线状态，适合修改在线、忙碌、离开、隐身、设备状态和扩展状态展示
 
 Args:
     face_id(str): 必填，图标ID。
@@ -4187,7 +4187,7 @@ Returns:
         approve: bool,
         flag: str,
     ):
-        """同意或拒绝系统的可疑好友申请
+        """处理可疑好友申请，适合同意、拒绝、忽略风控好友请求和异常加好友通知
 
 Args:
     approve(bool): 必填，是否同意 (强制为 true)。
@@ -4208,7 +4208,7 @@ Returns:
         event: AstrMessageEvent,
         message_id: int = None,
     ):
-        """将一条消息设置为群精华消息
+        """设置群精华消息，适合把重要群消息加入精华、收藏公告内容和标记重点讨论
 
 Args:
     message_id(int): 可选，消息ID。默认优先使用被回复消息 ID；未回复或解析失败时使用当前消息 ID。
@@ -4227,7 +4227,7 @@ Returns:
         flag: str,
         remark: str,
     ):
-        """同意或拒绝加好友请求
+        """处理加好友请求，适合同意好友申请、拒绝好友申请和设置好友备注
 
 Args:
     approve(bool): 必填，是否同意请求 默认值: `true`。
@@ -4252,7 +4252,7 @@ Returns:
         remark: str,
         user_id: int = None,
     ):
-        """设置好友备注
+        """设置好友备注，适合修改联系人备注、好友名称、别名和通讯录显示名
 
 Args:
     remark(str): 必填，备注内容。
@@ -4275,7 +4275,7 @@ Returns:
         group_answer: str = None,
         group_question: str = None,
     ):
-        """设置群加群选项
+        """设置群加群验证选项，适合配置入群方式、加群审批、问题验证和群申请规则
 
 Args:
     add_type(int): 必填，加群方式。
@@ -4304,7 +4304,7 @@ Returns:
         count: int = None,
         reason: str = None,
     ):
-        """同意或拒绝加群请求或邀请
+        """处理加群请求或邀请，适合同意入群申请、拒绝加群申请和审批群邀请
 
 Args:
     approve(bool): 必填，是否同意请求／邀请 默认值: `true`。
@@ -4333,7 +4333,7 @@ Returns:
         group_id: int = None,
         user_id: int = None,
     ):
-        """设置群管理
+        """设置群管理员，适合授予或取消群管理权限、调整管理员和群管身份
 
 Args:
     enable(bool): 必填，true 为设置, false 为取消 默认值: `true`。
@@ -4359,7 +4359,7 @@ Returns:
         set: bool,
         group_id: int = None,
     ):
-        """点赞群相册
+        """点赞群相册媒体，适合给群相册图片、视频、相册动态和媒体资源点赞
 
 Args:
     album_id(str): 必填，相册ID。
@@ -4389,7 +4389,7 @@ Returns:
         group_id: int = None,
         enable: bool = None,
     ):
-        """群组匿名
+        """设置群匿名聊天开关，适合启用或关闭群匿名、匿名发言和群匿名功能
 
 Args:
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
@@ -4413,7 +4413,7 @@ Returns:
         duration: int = None,
         flag: str = None,
     ):
-        """群组匿名用户禁言
+        """禁言群匿名用户，适合按匿名标识限制匿名发言、处理匿名违规和群管理禁言
 
 Args:
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
@@ -4444,7 +4444,7 @@ Returns:
         group_id: int = None,
         user_id: int = None,
     ):
-        """群禁言
+        """禁言群成员，适合设置指定成员禁言时长、解除禁言和群管理处罚
 
 Args:
     duration(int): 必填，禁言时长, 单位秒, 0 表示取消禁言 默认值: `30 * 60`。
@@ -4468,7 +4468,7 @@ Returns:
         user_id: int = None,
         card: str = None,
     ):
-        """设置群聊中指定成员的群名片
+        """设置群成员名片，适合修改指定成员群昵称、群名片和群内显示名称
 
 Args:
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
@@ -4492,7 +4492,7 @@ Returns:
         user_id: int = None,
         reject_add_request: bool = None,
     ):
-        """将指定成员踢出群聊
+        """踢出群成员，适合将指定用户移出群聊、拒绝再次加群和群管理清退
 
 Args:
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
@@ -4516,7 +4516,7 @@ Returns:
         user_id: int = None,
         reject_add_request: bool = None,
     ):
-        """从指定群聊中批量踢出多个成员
+        """批量踢出群成员，适合一次移除多个用户、群清理、批量群管理和成员清退
 
 Args:
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
@@ -4539,7 +4539,7 @@ Returns:
         group_id: int = None,
         is_dismiss: bool = None,
     ):
-        """退出或解散指定群聊
+        """退出或解散群聊，适合机器人退群、群主解散群和结束群会话
 
 Args:
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
@@ -4560,7 +4560,7 @@ Returns:
         group_name: str,
         group_id: int = None,
     ):
-        """设置群名
+        """设置群名称，适合修改群名、群标题、群资料名称和群聊显示名称
 
 Args:
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
@@ -4582,7 +4582,7 @@ Returns:
         group_id: int = None,
         cache: int = None,
     ):
-        """修改指定群聊的头像
+        """设置群头像，适合修改群聊头像、群图片、群资料封面和群标识图片
 
 Args:
     file(str): 必填，头像文件路径或 URL。
@@ -4606,7 +4606,7 @@ Returns:
         remark: str,
         group_id: int = None,
     ):
-        """设置群备注
+        """设置群备注，适合修改本地群备注、群别名和群列表显示名称
 
 Args:
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
@@ -4628,7 +4628,7 @@ Returns:
         robot_member_examine: int = None,
         robot_member_switch: int = None,
     ):
-        """设置群机器人加群选项
+        """设置群机器人加群选项，适合配置机器人入群审批、机器人邀请和自动加群规则
 
 Args:
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
@@ -4653,7 +4653,7 @@ Returns:
         no_code_finger_open: int = None,
         no_finger_open: int = None,
     ):
-        """设置群搜索
+        """设置群搜索可见性，适合允许或禁止被搜索、群公开检索和群发现入口配置
 
 Args:
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
@@ -4676,7 +4676,7 @@ Returns:
         event: AstrMessageEvent,
         group_id: int = None,
     ):
-        """群打卡
+        """设置或执行群签到打卡，适合群每日打卡、活跃签到和群互动任务
 
 Args:
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
@@ -4696,7 +4696,7 @@ Returns:
         user_id: int = None,
         duration: int = None,
     ):
-        """设置群聊中指定成员的专属头衔
+        """设置群成员专属头衔，适合修改群头衔、特殊称号、荣誉称号和成员标签
 
 Args:
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
@@ -4723,7 +4723,7 @@ Returns:
         message_id: int = None,
         message_seq: int = None,
     ):
-        """设置群代办
+        """设置群待办，适合把消息设为群任务、群提醒、待办事项和需要成员确认的消息
 
 Args:
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
@@ -4746,7 +4746,7 @@ Returns:
         enable: bool,
         group_id: int = None,
     ):
-        """全体禁言
+        """设置群全体禁言，适合开启或关闭全员禁言、群静默和群管理管控
 
 Args:
     enable(bool): 必填，是否开启全员禁言 默认值: `true`。
@@ -4769,7 +4769,7 @@ Returns:
         set: bool = None,
         users: str = None,
     ):
-        """设置用户在频道中的角色
+        """设置频道成员角色，适合给用户添加或移除频道身份组、权限角色和成员分组
 
 Args:
     guild_id(str): 必填，频道ID。
@@ -4797,7 +4797,7 @@ Returns:
         event_type: int,
         user_id: int = None,
     ):
-        """设置输入状态
+        """设置输入状态，适合展示正在输入、取消输入提示和私聊输入状态同步
 
 Args:
     event_type(int): 必填，事件类型。
@@ -4818,7 +4818,7 @@ Returns:
         model: str = None,
         model_show: str = None,
     ):
-        """_设置在线机型
+        """设置在线机型展示，适合修改在线设备名称、客户端机型和资料卡设备显示
 
 Args:
     model(str): 可选，机型名称。
@@ -4841,7 +4841,7 @@ Returns:
         set: bool,
         message_id: int = None,
     ):
-        """设置消息表情点赞
+        """设置消息表情回应，适合给消息添加或取消 Emoji 点赞、表情反应和互动回应
 
 Args:
     emoji_id(int): 必填，表情ID。
@@ -4868,7 +4868,7 @@ Returns:
         extStatus: int,
         status: int,
     ):
-        """## 状态列表 ### 在线 ```json5; { "status": 10, "ext_status": 0, "battery_status": 0; } ``` ### Q我吧 ```json5; { "status": 60, "ext_status": 0, "battery_status": 0; } ``` ### 离开 ```json5; { "status": 30, "ext_status": 0, "battery_status": 0; } ``` ### 忙碌 ```json5; { "
+        """设置 QQ 在线状态，适合切换在线、离开、忙碌、隐身、Q我吧、电量和扩展状态
 
 Args:
     battery_status(str): 必填，电量状态。
@@ -4898,7 +4898,7 @@ Returns:
         event: AstrMessageEvent,
         file: str,
     ):
-        """修改当前账号的QQ头像
+        """修改当前账号 QQ 头像，适合上传新头像、更新机器人头像和设置个人资料图片
 
 Args:
     file(str): 必填，图片路径、URL或Base64。
@@ -4918,7 +4918,7 @@ Returns:
         personal_note: str = None,
         sex: str = None,
     ):
-        """修改当前账号的昵称、个性签名等资料
+        """修改当前账号资料，适合更新 QQ 昵称、签名、性别、生日、邮箱和个人资料字段
 
 Args:
     nickname(str): 必填，昵称。
@@ -4942,7 +4942,7 @@ Returns:
         event: AstrMessageEvent,
         delay: int = None,
     ):
-        """重启服务
+        """重启 NapCat 服务，适合远程重启、应用配置、恢复异常和重新启动机器人服务
 
 Args:
     delay(int): 可选，要延迟的毫秒数, 如果默认情况下无法重启, 可以尝试设置延迟为 2000 左右 默认值: `0`。
@@ -4960,7 +4960,7 @@ Returns:
         event: AstrMessageEvent,
         longNick: str,
     ):
-        """修改当前登录帐号的个性签名
+        """修改当前账号个性签名，适合设置 longnick、个人签名、状态文案和资料卡签名
 
 Args:
     longNick(str): 必填，签名内容。
@@ -4978,7 +4978,7 @@ Returns:
         event: AstrMessageEvent,
         error: bool = None,
     ):
-        """流式下载测试
+        """测试流式下载，适合验证下载流、网络资源读取、文件流稳定性和调试下载接口
 
 Args:
     error(bool): 可选，是否触发测试错误。
@@ -4997,7 +4997,7 @@ Returns:
         file_id: str,
         group_id: int = None,
     ):
-        """传输群文件
+        """转存或传输群文件，适合在群文件系统内复制、转移、保存和处理共享文件资源
 
 Args:
     file_id(str): 必填，文件ID。
@@ -5036,7 +5036,7 @@ Returns:
         self,
         event: AstrMessageEvent,
     ):
-        """unknown
+        """调用未归类 NapCat 接口，适合临时兼容未知动作、实验接口和调试未命名能力
 
 Args:
     无接口参数。
@@ -5056,7 +5056,7 @@ Returns:
         role_id: str,
         independent: bool = None,
     ):
-        """修改频道角色
+        """修改频道角色信息，适合更新频道身份组名称、颜色、权限配置和角色排序
 
 Args:
     color(str): 必填，颜色(示例:4294927682)。
@@ -5096,7 +5096,7 @@ Returns:
         total_chunks: int = None,
         verify_only: bool = None,
     ):
-        """以流式方式上传文件数据到机器人
+        """流式上传文件数据，适合上传本地文件、网络文件、二进制流和后续发送素材
 
 Args:
     file_retention(int): 必填，默认5分钟回收 不设置或0为不回收。
@@ -5149,7 +5149,7 @@ Returns:
         folder: str = None,
         folder_id: str = None,
     ):
-        """上传资源路径或URL指定的文件到指定群聊的文件系统中
+        """上传文件到群文件，适合把本地路径、URL 或资源文件上传到群共享文件系统
 
 Args:
     file(str): 必填，资源路径或URL。
@@ -5184,7 +5184,7 @@ Returns:
         file: str = None,
         group_id: int = None,
     ):
-        """上传图片到群相册。调用前通常需要先使用 napcat_get_qun_album_list 获取相册 ID 和相册名称。
+        """上传图片到群相册，适合把回复图片、当前图片、URL 或本地图片保存到指定群相册；调用前通常需要先用 napcat_get_qun_album_list 获取相册 ID
 
 Args:
     album_id(str): 必填，相册ID。
@@ -5212,7 +5212,7 @@ Returns:
         upload_file: bool,
         user_id: int = None,
     ):
-        """上传本地文件到指定私聊会话中
+        """上传私聊文件，适合把本地文件、路径资源和附件发送到指定好友私聊会话
 
 Args:
     file(str): 必填，资源路径或URL。

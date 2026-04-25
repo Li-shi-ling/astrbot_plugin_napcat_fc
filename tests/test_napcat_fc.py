@@ -701,8 +701,8 @@ def test_todo_tracks_all_tools_and_prompt_progress():
 
     assert todo_text.count("- [") == len(records)
     assert "- [x] 001. `napcat_arksharegroup`" in todo_text
-    assert "- [x] 130. `napcat_send_guild_channel_msg`" in todo_text
-    assert "- [ ] 131. `napcat_send_like`" in todo_text
+    assert "- [x] 180. `napcat_upload_private_file`" in todo_text
+    assert todo_text.count("- [ ]") == 0
     gitignore_lines = (Path(__file__).resolve().parents[1] / ".gitignore").read_text(
         encoding="utf-8"
     ).splitlines()
@@ -737,6 +737,16 @@ def test_optimized_tool_prompts_include_searchable_context():
     assert "接收在线文件" in by_name["napcat_receive_online_file"].capability
     assert "群公告" in by_name["napcat_send_group_notice"].capability
     assert "频道通知" in by_name["napcat_send_guild_channel_msg"].capability
+    assert "资料卡点赞" in by_name["napcat_send_like"].capability
+    assert "群聊或私聊" in by_name["napcat_send_msg"].capability
+    assert "在线文件任务" in by_name["napcat_send_online_file"].capability
+    assert "群精华消息" in by_name["napcat_set_essence_msg"].capability
+    assert "好友申请" in by_name["napcat_set_friend_add_request"].capability
+    assert "群管理员" in by_name["napcat_set_group_admin"].capability
+    assert "踢出群成员" in by_name["napcat_set_group_kick"].capability
+    assert "QQ 在线状态" in by_name["napcat_set_online_status"].capability
+    assert "QQ 头像" in by_name["napcat_set_qq_avatar"].capability
+    assert "群共享文件系统" in by_name["napcat_upload_group_file"].capability
 
 
 def test_ark_share_tools_describe_auto_send_targets():

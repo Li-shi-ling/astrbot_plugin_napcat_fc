@@ -7,7 +7,10 @@ import re
 from .db.repo import ToolRegistryData
 
 
-CALL_RE = re.compile(r"_call_napcat_api\(\s*event,\s*'([^']+)'", re.MULTILINE)
+CALL_RE = re.compile(
+    r"_call_(?:napcat_api|ark_share_and_send)\(\s*event,\s*'([^']+)'",
+    re.MULTILINE,
+)
 
 
 def build_tool_registry_data(plugin_cls: type) -> list[ToolRegistryData]:

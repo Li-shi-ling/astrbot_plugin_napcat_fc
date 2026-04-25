@@ -1,5 +1,11 @@
 ﻿# 更新日志
 
+## v1.15.6 - 2026-04-25
+
+- `napcat_send_group_ark_share`、`napcat_send_ark_share`、`napcat_arksharegroup` 和 `napcat_arksharepeer` 改为自动发送 Ark 卡片，不再要求 LLM 二次调用消息发送工具。
+- 这 4 个 Ark 分享工具新增 `send_group_id` 和 `send_user_id` 参数；两个目标都不填时默认发送到当前会话。
+- 移除上一版新增的 JSON 卡片辅助工具注册和普通消息工具中的二次发送提示，工具管理数据库同步数量恢复为 180 个。
+
 ## v1.15.5 - 2026-04-25
 
 - 新增 `napcat_send_group_json_msg` 和 `napcat_send_private_json_msg`，用于发送 Ark、小程序和结构化 JSON 卡片。

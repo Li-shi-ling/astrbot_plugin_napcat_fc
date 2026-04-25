@@ -14,7 +14,7 @@
 - 仅系统专属工具名记录在插件类属性 `WINDOWS_TOOL_NAMES`、`LINUX_TOOL_NAMES`、`MAC_TOOL_NAMES` 中；当前只有 OCR 工具属于 Windows 专属。
 - 信息获取类接口会通过函数 `return` 把 NapCat API 响应返回给 LLM，不直接向当前聊天发送消息。
 - 当前 NapCat 版本中 `/translate_en2zh` 存在问题，老版本 NapCat 中 `/get_mini_app_ark` 不兼容；`napcat_translate_en2zh` 和 `napcat_get_mini_app_ark` 已临时禁用，不会进入工具搜索、动态发现或请求注入。
-- Ark 分享类接口（`napcat_send_group_ark_share`、`napcat_send_ark_share`、`napcat_arksharegroup`、`napcat_arksharepeer`）只负责获取卡片 JSON 内容。发送卡片时应先拿返回 JSON 的 `data` 字段，再按目标会话选择 JSON 卡片辅助工具：群聊调用 `napcat_send_group_json_msg(json_data=Ark JSON字符串)`，私聊调用 `napcat_send_private_json_msg(json_data=Ark JSON字符串)`。不要把 Ark/小程序卡片拼成 `[app]...[/app][data]...[/data]` 文本传给普通消息工具。
+- Ark 分享类接口（`napcat_send_group_ark_share`、`napcat_send_ark_share`、`napcat_arksharegroup`、`napcat_arksharepeer`）会自动获取卡片 JSON 并发送，不需要二次调用消息发送工具。可通过 `send_group_id` 指定发送群号，或通过 `send_user_id` 指定发送用户；两者都不填时默认发送到当前会话。
 
 ## 会话默认参数
 
@@ -77,7 +77,7 @@ LLM 调用具体接口时使用对应工具，例如 `napcat_send_group_msg`：
 
 获取信息类工具，例如 `napcat_get_login_info`、`napcat_get_group_info`、`napcat_fetch_custom_face`、`napcat_can_send_image`，返回值会作为工具结果交给 LLM 继续理解和组织回复，而不是由插件直接发送到聊天窗口。
 
-发送 Ark、小程序或结构化 JSON 卡片时，不要把内容拼成 `[app]...[/app][data]...[/data]` 文本传给 `napcat_send_group_msg`、`napcat_send_private_msg` 或 `napcat_send_msg`。正确流程是先从 Ark 分享类接口结果中取 `data` 字段，再调用 `napcat_send_group_json_msg` 或 `napcat_send_private_json_msg`，插件会自动包装 OneBot `json` 消息段。
+发送 Ark 分享卡片时直接调用 `napcat_send_group_ark_share`、`napcat_send_ark_share`、`napcat_arksharegroup` 或 `napcat_arksharepeer`。这些工具会自动包装 OneBot `json` 消息段并发送到 `send_group_id`、`send_user_id` 或当前会话。
 
 `napcat_send_poke`、`napcat_friend_poke` 和 `napcat_group_poke` 的 `target_id` 仅作为兼容别名使用，实际请求 NapCat 时会映射为 `user_id`，不会把 `target_id` 字段传给 NapCat。在群聊中省略 `group_id` 会默认使用当前群号；在私聊中省略 `group_id` 会按私聊戳一戳处理，群聊专用工具缺群号时会返回可读提示。
 

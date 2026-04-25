@@ -12,7 +12,7 @@ import pytest
 
 import astrbot.api  # noqa: F401
 from astrbot.core.platform.astrbot_message import AstrBotMessage, MessageMember
-from astrbot.core.message.components import Reply
+from astrbot.core.message.components import Image, Reply
 from astrbot.core.platform.message_type import MessageType
 from astrbot.core.platform.platform_metadata import PlatformMetadata
 from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import (
@@ -307,6 +307,87 @@ async def test_group_todo_uses_replied_message_id_when_message_id_is_omitted():
             {"group_id": 654321, "message_id": 456},
         )
     ]
+
+
+@pytest.mark.asyncio
+async def test_album_upload_uses_replied_image_when_file_is_omitted():
+    event = make_aiocqhttp_event(
+        group_id="654321",
+        message_components=[
+            Reply(
+                id="456",
+                chain=[
+                    Image(file="reply-file.jpg", url="https://example.com/reply.jpg")
+                ],
+            ),
+            Image(file="current-file.jpg", url="https://example.com/current.jpg"),
+        ],
+    )
+    plugin = NapCatFunctionToolsPlugin(context=None)
+
+    await plugin.napcat_upload_image_to_qun_album_tool(
+        event,
+        album_id="album_1",
+        album_name="测试相册",
+    )
+
+    assert event.bot.api.calls == [
+        (
+            "upload_image_to_qun_album",
+            {
+                "album_id": "album_1",
+                "album_name": "测试相册",
+                "file": "https://example.com/reply.jpg",
+                "group_id": 654321,
+            },
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_album_upload_falls_back_to_current_image_when_no_reply_image():
+    event = make_aiocqhttp_event(
+        group_id="654321",
+        message_components=[
+            Image(file="current-file.jpg", url="https://example.com/current.jpg"),
+        ],
+    )
+    plugin = NapCatFunctionToolsPlugin(context=None)
+
+    await plugin.napcat_upload_image_to_qun_album_tool(
+        event,
+        album_id="album_1",
+        album_name="测试相册",
+    )
+
+    assert event.bot.api.calls == [
+        (
+            "upload_image_to_qun_album",
+            {
+                "album_id": "album_1",
+                "album_name": "测试相册",
+                "file": "https://example.com/current.jpg",
+                "group_id": 654321,
+            },
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_album_upload_returns_friendly_message_when_file_is_missing():
+    event = make_aiocqhttp_event(group_id="654321")
+    plugin = NapCatFunctionToolsPlugin(context=None)
+
+    result = await plugin.napcat_upload_image_to_qun_album_tool(
+        event,
+        album_id="album_1",
+        album_name="测试相册",
+    )
+    payload = json.loads(result)
+
+    assert payload["status"] == "missing_context"
+    assert "图片" in payload["message"]
+    assert event.bot.api.calls == []
 
 
 @pytest.mark.asyncio

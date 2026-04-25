@@ -31,7 +31,7 @@ from napcat_fc.tool_registry import build_tool_registry_data
     "astrbot_plugin_napcat_fc",
     "Soulter / AstrBot contributors",
     "将 NapCat / OneBot / go-cqhttp API 注册为 AstrBot 函数工具。",
-    "1.14.9",
+    "1.15.0",
 )
 class NapCatFunctionToolsPlugin(Star):
     SEARCH_TOOL_NAME = "napcat_search_tools"
@@ -476,6 +476,20 @@ class NapCatFunctionToolsPlugin(Star):
             raise ValueError("endpoint must not be empty.")
         payload = dict(payload)
         self._normalize_contextual_target_params(event, action, payload)
+        missing_action_default = await self._fill_action_specific_defaults(
+            event,
+            action,
+            payload,
+        )
+        if missing_action_default:
+            return json.dumps(
+                {
+                    "status": "missing_context",
+                    "message": missing_action_default,
+                    "endpoint": action,
+                },
+                ensure_ascii=False,
+            )
         missing_context = self._fill_context_defaults(event, payload)
         if missing_context:
             return json.dumps(
@@ -503,6 +517,22 @@ class NapCatFunctionToolsPlugin(Star):
         if self._is_information_action(action):
             return json.dumps(result, ensure_ascii=False, default=str)
         return json.dumps(result, ensure_ascii=False, default=str)
+
+    async def _fill_action_specific_defaults(
+        self,
+        event: AiocqhttpMessageEvent,
+        action: str,
+        payload: dict,
+    ) -> str | None:
+        if action != "upload_image_to_qun_album":
+            return None
+        if payload.get("file"):
+            return None
+        image_file = await self._get_default_image_file(event)
+        if not image_file:
+            return "当前消息和被回复消息中都没有可用于上传群相册的图片。请发送或回复一张图片，或明确提供图片路径、URL、base64。"
+        payload["file"] = image_file
+        return None
 
     def _get_current_group_id_or_none(self, event: AstrMessageEvent):
         if not isinstance(event, AiocqhttpMessageEvent):
@@ -603,6 +633,81 @@ class NapCatFunctionToolsPlugin(Star):
             if self._has_value(reply_id):
                 return reply_id
         return None
+
+    async def _get_default_image_file(self, event: AiocqhttpMessageEvent):
+        message_obj = getattr(event, "message_obj", None)
+        current_components = list(getattr(message_obj, "message", []) or [])
+
+        for component in current_components:
+            component_type = str(getattr(component, "type", "")).lower()
+            if not component_type.endswith("reply"):
+                continue
+            image_file = await self._get_first_image_file_from_components(
+                getattr(component, "chain", []) or []
+            )
+            if self._has_value(image_file):
+                return image_file
+
+        image_file = self._get_first_image_file_from_raw_reply(event)
+        if self._has_value(image_file):
+            return image_file
+
+        image_file = await self._get_first_image_file_from_components(current_components)
+        if self._has_value(image_file):
+            return image_file
+
+        return self._get_first_image_file_from_raw_segments(event)
+
+    async def _get_first_image_file_from_components(self, components):
+        for component in components or []:
+            component_type = str(getattr(component, "type", "")).lower()
+            if not component_type.endswith("image"):
+                continue
+            image_file = (
+                getattr(component, "url", None)
+                or getattr(component, "file", None)
+                or getattr(component, "path", None)
+            )
+            if self._has_value(image_file):
+                return image_file
+            convert_to_base64 = getattr(component, "convert_to_base64", None)
+            if convert_to_base64:
+                return f"base64://{await convert_to_base64()}"
+        return None
+
+    def _get_first_image_file_from_raw_reply(self, event: AiocqhttpMessageEvent):
+        raw_segments = self._get_raw_message_segments(event)
+        for segment in raw_segments:
+            if not isinstance(segment, dict) or segment.get("type") != "reply":
+                continue
+            data = segment.get("data") or {}
+            if not isinstance(data, dict):
+                continue
+            for key in ("url", "file", "path"):
+                image_file = data.get(key)
+                if self._has_value(image_file):
+                    return image_file
+        return None
+
+    def _get_first_image_file_from_raw_segments(self, event: AiocqhttpMessageEvent):
+        raw_segments = self._get_raw_message_segments(event)
+        for segment in raw_segments:
+            if not isinstance(segment, dict) or segment.get("type") != "image":
+                continue
+            data = segment.get("data") or {}
+            if not isinstance(data, dict):
+                continue
+            for key in ("url", "file", "path"):
+                image_file = data.get(key)
+                if self._has_value(image_file):
+                    return image_file
+        return None
+
+    def _get_raw_message_segments(self, event: AiocqhttpMessageEvent) -> list:
+        message_obj = getattr(event, "message_obj", None)
+        raw_message = getattr(message_obj, "raw_message", None)
+        raw_segments = getattr(raw_message, "message", None)
+        return raw_segments if isinstance(raw_segments, list) else []
 
     def _has_value(self, value) -> bool:
         return value is not None and value != ""
@@ -4839,15 +4944,15 @@ Returns:
         event: AstrMessageEvent,
         album_id: str,
         album_name: str,
-        file: str,
+        file: str = None,
         group_id: int = None,
     ):
-        """能力: 上传图片到群相册 (API: /upload_image_to_qun_album).
+        """能力: 上传图片到群相册 (API: /upload_image_to_qun_album)。调用前通常需要先使用 napcat_get_qun_album_list 获取相册 ID 和相册名称。
 
 Args:
     album_id(str): 必填，相册ID。
-    album_name(str): 必填，相册名称。
-    file(str): 必填，图片路径、URL或Base64。
+    album_name(str): 必填，相册名称。需要先调用 napcat_get_qun_album_list 获取准确名称。
+    file(str): 可选，图片路径、URL或Base64。默认优先使用被回复消息里的第一张图片；没有回复图片时使用当前消息里的第一张图片。
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
 
 Returns:
@@ -4857,8 +4962,7 @@ Returns:
             payload['album_id'] = album_id
         if album_name is not None:
             payload['album_name'] = album_name
-        if file is not None:
-            payload['file'] = file
+        payload['file'] = file
         payload['group_id'] = group_id
         return await self._call_napcat_api(event, 'upload_image_to_qun_album', payload)
 

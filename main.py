@@ -31,7 +31,7 @@ from napcat_fc.tool_registry import build_tool_registry_data
     "astrbot_plugin_napcat_fc",
     "Soulter / AstrBot contributors",
     "将 NapCat / OneBot / go-cqhttp API 注册为 AstrBot 函数工具。",
-    "1.15.13",
+    "1.15.14",
 )
 class NapCatFunctionToolsPlugin(Star):
     SEARCH_TOOL_NAME = "napcat_search_tools"
@@ -2717,7 +2717,7 @@ Returns:
         user_id: int = None,
         guild_id: str = None,
     ):
-        """单独获取频道成员信息
+        """获取频道成员详细资料，适合查询指定频道用户的昵称、头像、角色、身份和成员档案
 
 Args:
     guild_id(str): 可选，频道ID。
@@ -2738,7 +2738,7 @@ Returns:
         event: AstrMessageEvent,
         guild_id: str = None,
     ):
-        """通过访客获取频道元数据
+        """以访客视角获取频道元数据，适合查询频道名称、图标、简介、公开资料和 guild 信息
 
 Args:
     guild_id(str): 可选，频道ID。
@@ -2757,7 +2757,7 @@ Returns:
         message_id: int = None,
         no_cache: bool = None,
     ):
-        """获取频道消息
+        """获取频道消息详情，适合按频道消息 ID 查询子频道聊天内容、发送者和消息结构
 
 Args:
     message_id(int): 可选，频道消息ID。默认优先使用被回复消息 ID；未回复或解析失败时使用当前消息 ID。
@@ -2777,7 +2777,7 @@ Returns:
         event: AstrMessageEvent,
         guild_id: str,
     ):
-        """获取频道角色列表
+        """获取频道角色列表，适合查询频道身份组、权限角色、角色 ID 和成员分组配置
 
 Args:
     guild_id(str): 必填，频道ID。
@@ -2794,7 +2794,7 @@ Returns:
         self,
         event: AstrMessageEvent,
     ):
-        """get_guild_service_profile
+        """获取频道服务资料，适合查询频道服务号、机器人服务信息和频道侧资料配置
 
 Args:
     无接口参数。
@@ -2811,7 +2811,7 @@ Returns:
         file: str,
         file_id: str = None,
     ):
-        """获取指定图片的信息及路径
+        """获取图片信息和本地路径，适合根据 file_id 查询图片 URL、缓存路径、尺寸和下载素材
 
 Args:
     file(str): 必填，收到的图片文件名（消息段的 `file` 参数），如 `6B4DE3DFD1BD271E3297859D41C530F5.jpg`。
@@ -2831,7 +2831,7 @@ Returns:
         self,
         event: AstrMessageEvent,
     ):
-        """获取当前登录帐号的信息
+        """获取当前登录账号信息，适合查询机器人 QQ 号、昵称、账号资料和登录身份
 
 Args:
     无接口参数。
@@ -2862,7 +2862,7 @@ Returns:
         event: AstrMessageEvent,
         model: str,
     ):
-        """_获取在线机型
+        """获取在线机型展示信息，适合查询当前账号在线设备、客户端机型和可展示设备名称
 
 Args:
     model(str): 必填，模型名称。
@@ -2880,7 +2880,7 @@ Returns:
         event: AstrMessageEvent,
         message_id: int = None,
     ):
-        """根据消息 ID 获取消息详细信息
+        """根据消息 ID 获取消息详情，适合查询原始消息内容、发送者、群号、私聊和消息段结构
 
 Args:
     message_id(int): 可选，消息 ID。默认优先使用被回复消息 ID；未回复或解析失败时使用当前消息 ID。
@@ -2897,7 +2897,7 @@ Returns:
         event: AstrMessageEvent,
         no_cache: bool = None,
     ):
-        """获取当前登录账号的在线客户端列表
+        """获取当前账号在线客户端列表，适合查询手机、电脑、平板等登录设备和在线状态
 
 Args:
     no_cache(bool): 可选，是否无视缓存。
@@ -2915,7 +2915,7 @@ Returns:
         event: AstrMessageEvent,
         user_id: int = None,
     ):
-        """获取在线文件消息
+        """获取在线文件消息详情，适合查询在线传输文件、文件名、大小、发送者和接收状态
 
 Args:
     user_id(int): 可选，用户 QQ。默认使用当前消息发送者的用户 ID。
@@ -2932,7 +2932,7 @@ Returns:
         event: AstrMessageEvent,
         file_id: str,
     ):
-        """获取指定私聊文件的下载链接
+        """获取私聊文件下载链接，适合根据私聊文件 ID 查询 URL、文件名和临时下载地址
 
 Args:
     file_id(str): 必填，文件ID。
@@ -2952,7 +2952,7 @@ Returns:
         start: int,
         user_id: int = None,
     ):
-        """获取点赞列表
+        """获取用户资料卡点赞列表，适合查询谁赞过资料卡、点赞用户和个人主页互动记录
 
 Args:
     count(int): 必填，获取数量。
@@ -2977,7 +2977,7 @@ Returns:
         group_id: int = None,
         attach_info: str = None,
     ):
-        """获取群相册列表
+        """获取群相册列表，适合查询群相册 ID、相册名称、图片视频集合和上传目标相册
 
 Args:
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
@@ -2997,7 +2997,7 @@ Returns:
         event: AstrMessageEvent,
         count: int,
     ):
-        """获取的最新消息是每个会话最新的消息
+        """获取最近联系人会话列表，适合查询最近私聊、群聊、最新消息和会话入口
 
 Args:
     count(int): 必填，获取的数量。
@@ -3017,7 +3017,7 @@ Returns:
         out_format: str,
         file_id: str = None,
     ):
-        """获取指定语音文件的信息，并支持格式转换
+        """获取语音文件信息并转换格式，适合根据 file_id 查询语音路径、URL、时长和音频格式
 
 Args:
     file(str): 必填，收到的语音文件名（消息段的 `file` 参数）, 如 `0B38145AA44505000B38145AA4450500.silk`。
@@ -3040,7 +3040,7 @@ Returns:
         self,
         event: AstrMessageEvent,
     ):
-        """获取rkey
+        """获取资源访问 rkey，适合生成图片、语音、文件等资源链接所需的临时访问密钥
 
 Args:
     无接口参数。
@@ -3055,7 +3055,7 @@ Returns:
         self,
         event: AstrMessageEvent,
     ):
-        """获取 RKey 服务器
+        """获取 RKey 服务器信息，适合查询资源签名服务、下载鉴权服务和 rkey 生成节点
 
 Args:
     无接口参数。
@@ -3070,7 +3070,7 @@ Returns:
         self,
         event: AstrMessageEvent,
     ):
-        """获取机器人 UIN 范围
+        """获取机器人 UIN 范围，适合查询账号号段、机器人账号范围和协议侧 UIN 限制
 
 Args:
     无接口参数。
@@ -3086,7 +3086,7 @@ Returns:
         event: AstrMessageEvent,
         fileset_id: str,
     ):
-        """获取文件分享链接
+        """获取文件分享链接，适合为文件、群文件或私聊文件生成可分享 URL 和外部访问地址
 
 Args:
     fileset_id(str): 必填，文件集 ID。
@@ -3103,7 +3103,7 @@ Returns:
         self,
         event: AstrMessageEvent,
     ):
-        """获取状态
+        """获取 NapCat 运行状态，适合检查机器人在线、连接状态、是否正常运行和健康检查
 
 Args:
     无接口参数。
@@ -3120,7 +3120,7 @@ Returns:
         no_cache: bool,
         user_id: int = None,
     ):
-        """获取账号信息
+        """获取陌生人账号信息，适合查询非好友用户昵称、头像、性别、年龄和公开资料
 
 Args:
     no_cache(bool): 必填，是否不使用缓存（使用缓存可能更新不及时, 但响应更快） 默认值: `false`。
@@ -3141,7 +3141,7 @@ Returns:
         channel_id: str = None,
         guild_id: str = None,
     ):
-        """获取话题频道帖子
+        """获取话题频道帖子列表，适合查询频道帖子、动态、话题 feed 和内容流
 
 Args:
     channel_id(str): 可选，子频道ID。
@@ -3161,7 +3161,7 @@ Returns:
         self,
         event: AstrMessageEvent,
     ):
-        """获取单向好友列表
+        """获取单向好友列表，适合查询只保留单向关系的用户、陌生联系人和待清理好友
 
 Args:
     无接口参数。
@@ -3176,7 +3176,7 @@ Returns:
         self,
         event: AstrMessageEvent,
     ):
-        """获取版本信息
+        """获取 NapCat 和协议版本信息，适合查询版本号、实现名称、兼容性和运行环境信息
 
 Args:
     无接口参数。
@@ -3194,7 +3194,7 @@ Returns:
         user_id: int = None,
         target_id: int = None,
     ):
-        """在群聊或私聊中发送戳一戳动作
+        """在群聊中发送戳一戳，适合群内提醒成员、拍一拍、poke 和轻互动动作
 
 Args:
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
@@ -3215,7 +3215,7 @@ Returns:
         self,
         event: AstrMessageEvent,
     ):
-        """_设置所有消息已读
+        """标记所有会话消息为已读，适合清空未读数、批量已读和同步消息阅读状态
 
 Args:
     无接口参数。
@@ -3233,7 +3233,7 @@ Returns:
         message_id: int = None,
         user_id: int = None,
     ):
-        """标记指定渠道的消息为已读
+        """标记指定群消息为已读，适合清除群会话未读、同步群消息阅读状态和定位消息序号
 
 Args:
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
@@ -3258,7 +3258,7 @@ Returns:
         message_id: int = None,
         user_id: int = None,
     ):
-        """标记指定渠道的消息为已读
+        """按消息 ID 标记消息为已读，适合清除指定消息未读、同步阅读状态和消息确认
 
 Args:
     group_id(int): 可选，与user_id二选一。
@@ -3284,7 +3284,7 @@ Returns:
         group_id: int = None,
         message_id: int = None,
     ):
-        """标记指定渠道的消息为已读
+        """标记指定私聊消息为已读，适合清除好友会话未读、同步私聊阅读状态和消息确认
 
 Args:
     user_id(int): 可选，用户QQ。默认使用当前消息发送者的用户 ID。
@@ -3310,7 +3310,7 @@ Returns:
         target_parent_directory: str,
         group_id: int = None,
     ):
-        """移动群文件
+        """移动群文件到指定文件夹，适合整理群共享文件、迁移资料目录和调整群文件分类
 
 Args:
     current_parent_directory(str): 必填，根目录填 /。
@@ -3335,7 +3335,7 @@ Returns:
         self,
         event: AstrMessageEvent,
     ):
-        """获取底层Packet服务的运行状态
+        """获取底层 Packet 服务状态，适合诊断协议连接、网络收发、底层服务和性能问题
 
 Args:
     无接口参数。
@@ -3350,7 +3350,7 @@ Returns:
         self,
         event: AstrMessageEvent,
     ):
-        """nc获取rkey
+        """通过 NapCat 底层接口获取 rkey，适合资源下载鉴权、图片语音文件链接和协议调试
 
 Args:
     无接口参数。
@@ -3366,7 +3366,7 @@ Returns:
         event: AstrMessageEvent,
         user_id: int = None,
     ):
-        """获取用户在线状态
+        """获取用户在线状态，适合查询好友或用户是否在线、客户端状态和可联系状态
 
 Args:
     user_id(int): 可选，QQ号。默认使用当前消息发送者的用户 ID。
@@ -3383,7 +3383,7 @@ Returns:
         event: AstrMessageEvent,
         image: str,
     ):
-        """仅 Windows 可用
+        """识别图片文字，仅 Windows 可用，适合 OCR 提取截图、图片、聊天图片和表情包文本
 
 Args:
     image(str): 必填，图片路径、URL或Base64。
@@ -3400,7 +3400,7 @@ Returns:
         self,
         event: AstrMessageEvent,
     ):
-        """获取企点账号信息
+        """获取 QQ 企点账号信息，适合查询企业账号、企点资料、客服账号和商业身份信息
 
 Args:
     无接口参数。
@@ -3418,7 +3418,7 @@ Returns:
         msg_id: str,
         user_id: int = None,
     ):
-        """接收在线文件
+        """接收在线文件传输，适合同意好友发送的在线文件、开始下载和保存传输文件
 
 Args:
     element_id(str): 必填，元素 ID。
@@ -3443,7 +3443,7 @@ Returns:
         msg_id: str,
         user_id: int = None,
     ):
-        """拒绝在线文件
+        """拒绝在线文件传输，适合拒收好友文件、取消接收请求和处理不需要的传输文件
 
 Args:
     element_id(str): 必填，元素 ID。
@@ -3466,7 +3466,7 @@ Returns:
         event: AstrMessageEvent,
         file: str,
     ):
-        """重载事件过滤器
+        """重载事件过滤器，适合刷新 NapCat 事件规则、过滤配置和消息事件处理策略
 
 Args:
     file(str): 必填，事件过滤器文件。
@@ -3487,7 +3487,7 @@ Returns:
         new_name: str,
         group_id: int = None,
     ):
-        """重命名群文件
+        """重命名群文件，适合修改群共享文件名称、整理资料标题和修正文件命名
 
 Args:
     current_parent_directory(str): 必填，当前父目录。
@@ -3517,7 +3517,7 @@ Returns:
         send_group_id: int = None,
         send_user_id: int = None,
     ):
-        """获取用户推荐 Ark 卡片并自动发送到群聊或私聊
+        """获取用户推荐 Ark 卡片并自动发送，适合分享联系人名片、好友推荐和用户邀请卡片
 
 Args:
     phone_number(str): 必填，手机号。
@@ -3547,7 +3547,7 @@ Returns:
         group_id: int = None,
         user_id: int = None,
     ):
-        """发送闪传消息
+        """发送闪传消息，适合发送大文件、文件集、快速传输资源和临时分享内容
 
 Args:
     fileset_id(str): 必填，文件集 ID。
@@ -3581,7 +3581,7 @@ Returns:
         summary: str = None,
         timeout: int = None,
     ):
-        """发送合并转发消息
+        """发送合并转发消息，适合构造聊天记录、转发多条消息、发送节点列表和聚合内容
 
 Args:
     message(str): 必填，See source API docs。
@@ -3631,7 +3631,7 @@ Returns:
         text: str,
         group_id: int = None,
     ):
-        """发送 AI 生成的语音到指定群聊
+        """发送 AI 生成语音到群聊，适合群内 TTS、AI 声线配音、角色语音和文字转语音
 
 Args:
     character(str): 必填，character_id。
@@ -3656,7 +3656,7 @@ Returns:
         send_group_id: int = None,
         send_user_id: int = None,
     ):
-        """获取群分享 Ark 卡片并自动发送到群聊或私聊
+        """获取群分享 Ark 卡片并自动发送，适合分享群名片、群邀请、群资料和入群卡片
 
 Args:
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
@@ -3687,7 +3687,7 @@ Returns:
         summary: str = None,
         timeout: int = None,
     ):
-        """发送群合并转发消息
+        """发送群合并转发消息，适合在群聊发布聊天记录、多节点消息和聚合转发内容
 
 Args:
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
@@ -3743,7 +3743,7 @@ Returns:
         summary: str = None,
         timeout: int = None,
     ):
-        """发送群消息
+        """发送群消息，适合向群聊发送文本、图片、语音、表情、JSON、回复和消息段
 
 Args:
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
@@ -3794,7 +3794,7 @@ Returns:
         group_id: int = None,
         image: str = None,
     ):
-        """_发送群公告
+        """发送群公告，适合发布群通知、置顶公告、重要提醒和群管理消息
 
 Args:
     confirm_required(str): 必填，是否需要确认 (0/1)。
@@ -3832,7 +3832,7 @@ Returns:
         event: AstrMessageEvent,
         group_id: int = None,
     ):
-        """群打卡
+        """执行群打卡，适合群签到、每日打卡、活跃任务和群互动签到
 
 Args:
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
@@ -3851,7 +3851,7 @@ Returns:
         guild_id: str = None,
         message: str = None,
     ):
-        """发送信息到子频道
+        """发送频道子频道消息，适合向 guild 子频道发送文本、图片、消息段和频道通知
 
 Args:
     channel_id(str): 可选，子频道ID。

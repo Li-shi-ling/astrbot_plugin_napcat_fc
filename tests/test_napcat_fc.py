@@ -701,8 +701,8 @@ def test_todo_tracks_all_tools_and_prompt_progress():
 
     assert todo_text.count("- [") == len(records)
     assert "- [x] 001. `napcat_arksharegroup`" in todo_text
-    assert "- [x] 080. `napcat_get_guild_member_list`" in todo_text
-    assert "- [ ] 081. `napcat_get_guild_member_profile`" in todo_text
+    assert "- [x] 130. `napcat_send_guild_channel_msg`" in todo_text
+    assert "- [ ] 131. `napcat_send_like`" in todo_text
     gitignore_lines = (Path(__file__).resolve().parents[1] / ".gitignore").read_text(
         encoding="utf-8"
     ).splitlines()
@@ -728,6 +728,15 @@ def test_optimized_tool_prompts_include_searchable_context():
     assert "群相册图片" in by_name["napcat_get_group_album_media_list"].capability
     assert "群文件容量" in by_name["napcat_get_group_file_system_info"].capability
     assert "频道服务器" in by_name["napcat_get_guild_list"].capability
+    assert "频道成员详细资料" in by_name["napcat_get_guild_member_profile"].capability
+    assert "图片 URL" in by_name["napcat_get_image"].capability
+    assert "在线客户端" in by_name["napcat_get_online_clients"].capability
+    assert "最近联系人" in by_name["napcat_get_recent_contact"].capability
+    assert "健康检查" in by_name["napcat_get_status"].capability
+    assert "OCR" in by_name["napcat_ocr_image"].capability
+    assert "接收在线文件" in by_name["napcat_receive_online_file"].capability
+    assert "群公告" in by_name["napcat_send_group_notice"].capability
+    assert "频道通知" in by_name["napcat_send_guild_channel_msg"].capability
 
 
 def test_ark_share_tools_describe_auto_send_targets():

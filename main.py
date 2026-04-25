@@ -31,7 +31,7 @@ from napcat_fc.tool_registry import build_tool_registry_data
     "astrbot_plugin_napcat_fc",
     "Soulter / AstrBot contributors",
     "将 NapCat / OneBot / go-cqhttp API 注册为 AstrBot 函数工具。",
-    "1.15.10",
+    "1.15.11",
 )
 class NapCatFunctionToolsPlugin(Star):
     SEARCH_TOOL_NAME = "napcat_search_tools"
@@ -296,7 +296,7 @@ class NapCatFunctionToolsPlugin(Star):
                 }
             ],
             desc=(
-                "能力: 在 NapCat/OneBot/go-cqhttp 工具库中按关键词模糊搜索工具，"
+                "在 NapCat/OneBot/go-cqhttp 工具库中按关键词模糊搜索工具，"
                 "支持空格分词并发查询，会先取综合相关度最高的一批候选，"
                 "再排除已经发现过的工具，将剩余最相关的一批工具加入持久化发现队列，"
                 "并立即注入本轮请求。"
@@ -932,7 +932,7 @@ class NapCatFunctionToolsPlugin(Star):
         send_group_id: int = None,
         send_user_id: int = None,
     ):
-        """能力: 获取群分享 Ark 卡片并自动发送到群聊或私聊 (API: /ArkShareGroup).
+        """获取群分享 Ark 卡片并自动发送到群聊或私聊
 
 Args:
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
@@ -958,7 +958,7 @@ Returns:
         send_group_id: int = None,
         send_user_id: int = None,
     ):
-        """能力: 获取用户推荐 Ark 卡片并自动发送到群聊或私聊 (API: /ArkSharePeer).
+        """获取用户推荐 Ark 卡片并自动发送到群聊或私聊
 
 Args:
     phone_number(str): 必填，手机号。
@@ -988,7 +988,7 @@ Returns:
         self,
         event: AstrMessageEvent,
     ):
-        """能力: 账号退出 (API: /bot_exit).
+        """账号退出
 
 Args:
     无接口参数。
@@ -1003,7 +1003,7 @@ Returns:
         self,
         event: AstrMessageEvent,
     ):
-        """能力: 检查是否可以发送图片 (API: /can_send_image).
+        """检查是否可以发送图片
 
 Args:
     无接口参数。
@@ -1018,7 +1018,7 @@ Returns:
         self,
         event: AstrMessageEvent,
     ):
-        """能力: 检查是否可以发送语音 (API: /can_send_record).
+        """检查是否可以发送语音
 
 Args:
     无接口参数。
@@ -1036,7 +1036,7 @@ Returns:
         message_id: int = None,
         message_seq: int = None,
     ):
-        """能力: 将指定消息对应的群待办取消 (API: /cancel_group_todo).
+        """将指定消息对应的群待办取消
 
 Args:
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
@@ -1060,7 +1060,7 @@ Returns:
         msg_id: str,
         user_id: int = None,
     ):
-        """能力: 取消在线文件 (API: /cancel_online_file).
+        """取消在线文件
 
 Args:
     msg_id(str): 必填，消息 ID。
@@ -1080,7 +1080,7 @@ Returns:
         event: AstrMessageEvent,
         url: str,
     ):
-        """能力: 检查指定URL的安全等级 (API: /check_url_safely).
+        """检查指定URL的安全等级
 
 Args:
     url(str): 必填，要检查的 URL。
@@ -1097,7 +1097,7 @@ Returns:
         self,
         event: AstrMessageEvent,
     ):
-        """能力: 清理缓存 (API: /clean_cache).
+        """清理缓存
 
 Args:
     无接口参数。
@@ -1112,7 +1112,7 @@ Returns:
         self,
         event: AstrMessageEvent,
     ):
-        """能力: 清理流临时文件 (API: /clean_stream_temp_file).
+        """清理流临时文件
 
 Args:
     无接口参数。
@@ -1132,7 +1132,7 @@ Returns:
         msg_seq: int,
         group_id: int = None,
     ):
-        """能力: 点击内联键盘按钮 (API: /click_inline_keyboard_button).
+        """点击内联键盘按钮
 
 Args:
     bot_appid(str): 必填，机器人AppID。
@@ -1163,7 +1163,7 @@ Returns:
         message_id: int = None,
         message_seq: int = None,
     ):
-        """能力: 将指定消息对应的群待办标记为已完成 (API: /complete_group_todo).
+        """将指定消息对应的群待办标记为已完成
 
 Args:
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
@@ -1187,7 +1187,7 @@ Returns:
         brief: str,
         rawData: str,
     ):
-        """能力: 创建收藏 (API: /create_collection).
+        """创建收藏
 
 Args:
     brief(str): 必填，简要描述。
@@ -1210,7 +1210,7 @@ Returns:
         name: str = None,
         thumb_path: str = None,
     ):
-        """能力: 创建闪传任务 (API: /create_flash_task).
+        """创建闪传任务
 
 Args:
     files(str): 必填，文件列表或单个文件路径。
@@ -1237,7 +1237,7 @@ Returns:
         name: str = None,
         parent_id: str = None,
     ):
-        """能力: 创建群文件文件夹 (API: /create_group_file_folder).
+        """创建群文件文件夹
 
 Args:
     folder_name(str): 必填，文件夹名称。
@@ -1267,7 +1267,7 @@ Returns:
         independent: bool = None,
         initial_users: list = None,
     ):
-        """能力: 创建频道角色 (API: /create_guild_role).
+        """创建频道角色
 
 Args:
     color(str): 必填，颜色。
@@ -1299,7 +1299,7 @@ Returns:
         lloc: str,
         group_id: int = None,
     ):
-        """能力: 删除群相册媒体 (API: /del_group_album_media).
+        """删除群相册媒体
 
 Args:
     album_id(str): 必填，相册ID。
@@ -1323,7 +1323,7 @@ Returns:
         notice_id: str,
         group_id: int = None,
     ):
-        """能力: _删除群公告 (API: /_del_group_notice).
+        """_删除群公告
 
 Args:
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
@@ -1346,7 +1346,7 @@ Returns:
         msg_random: str = None,
         msg_seq: int = None,
     ):
-        """能力: 删除群精华消息 (API: /delete_essence_msg).
+        """删除群精华消息
 
 Args:
     message_id(int): 可选，消息ID。默认优先使用被回复消息 ID；未回复或解析失败时使用当前消息 ID。
@@ -1375,7 +1375,7 @@ Returns:
         user_id: int = None,
         friend_id: str = None,
     ):
-        """能力: 从好友列表中删除指定用户 (API: /delete_friend).
+        """从好友列表中删除指定用户
 
 Args:
     temp_block(bool): 必填，是否加入黑名单。
@@ -1403,7 +1403,7 @@ Returns:
         group_id: int = None,
         busid: int = None,
     ):
-        """能力: 在群文件系统中删除指定的文件 (API: /delete_group_file).
+        """在群文件系统中删除指定的文件
 
 Args:
     file_id(str): 必填，文件ID 参考 `File` 对象。
@@ -1428,7 +1428,7 @@ Returns:
         group_id: int = None,
         folder: str = None,
     ):
-        """能力: 删除群文件夹 (API: /delete_group_folder).
+        """删除群文件夹
 
 Args:
     folder_id(str): 必填，文件夹ID。
@@ -1452,7 +1452,7 @@ Returns:
         guild_id: str = None,
         role_id: str = None,
     ):
-        """能力: 删除频道角色 (API: /delete_guild_role).
+        """删除频道角色
 
 Args:
     guild_id(str): 可选，频道ID。
@@ -1473,7 +1473,7 @@ Returns:
         event: AstrMessageEvent,
         message_id: int = None,
     ):
-        """能力: 撤回已发送的消息 (API: /delete_msg).
+        """撤回已发送的消息
 
 Args:
     message_id(int): 可选，消息 ID。默认优先使用被回复消息 ID；未回复或解析失败时使用当前消息 ID。
@@ -1490,7 +1490,7 @@ Returns:
         event: AstrMessageEvent,
         user_id: int = None,
     ):
-        """能力: 删除单向好友 (API: /delete_unidirectional_friend).
+        """删除单向好友
 
 Args:
     user_id(int): 可选，单向好友QQ号。
@@ -1511,7 +1511,7 @@ Returns:
         lloc: str,
         group_id: int = None,
     ):
-        """能力: 发表群相册评论 (API: /do_group_album_comment).
+        """发表群相册评论
 
 Args:
     album_id(str): 必填，相册 ID。
@@ -1537,7 +1537,7 @@ Returns:
         event: AstrMessageEvent,
         content: str = None,
     ):
-        """能力: 获取中文分词 ( 隐藏 API ).
+        """获取中文分词。
 
 Args:
     content(str): 可选，内容。
@@ -1556,7 +1556,7 @@ Returns:
         context: dict,
         operation: dict,
     ):
-        """能力: 相当于http的快速操作.
+        """执行 OneBot 快速操作。
 
 Args:
     context(dict): 必填，事件数据对象, 可做精简, 如去掉 `message` 等无用字段。
@@ -1577,7 +1577,7 @@ Returns:
         event: AstrMessageEvent,
         image: str,
     ):
-        """能力: 仅 Windows 可用.
+        """识别图片文字，仅 Windows 可用。
 
 Args:
     image(str): 必填，图片路径、URL或Base64。
@@ -1599,7 +1599,7 @@ Returns:
         thread_count: int = None,
         url: str = None,
     ):
-        """能力: 下载网络文件到本地临时目录 (API: /download_file).
+        """下载网络文件到本地临时目录
 
 Args:
     base64(str): 可选，base64数据。
@@ -1631,7 +1631,7 @@ Returns:
         file: str = None,
         file_id: str = None,
     ):
-        """能力: 下载图片文件流 (API: /download_file_image_stream).
+        """下载图片文件流
 
 Args:
     chunk_size(int): 可选，分块大小 (字节)。
@@ -1658,7 +1658,7 @@ Returns:
         file_id: str = None,
         out_format: str = None,
     ):
-        """能力: 下载语音文件流 (API: /download_file_record_stream).
+        """下载语音文件流
 
 Args:
     chunk_size(int): 可选，分块大小 (字节)。
@@ -1687,7 +1687,7 @@ Returns:
         file: str = None,
         file_id: str = None,
     ):
-        """能力: 以流式方式从网络或本地下载文件 (API: /download_file_stream).
+        """以流式方式从网络或本地下载文件
 
 Args:
     chunk_size(int): 可选，分块大小 (字节)。
@@ -1711,7 +1711,7 @@ Returns:
         event: AstrMessageEvent,
         fileset_id: str,
     ):
-        """能力: 下载文件集 (API: /download_fileset).
+        """下载文件集
 
 Args:
     fileset_id(str): 必填，文件集 ID。
@@ -1729,7 +1729,7 @@ Returns:
         event: AstrMessageEvent,
         count: int,
     ):
-        """能力: 获取收藏表情 (API: /fetch_custom_face).
+        """获取收藏表情
 
 Args:
     count(int): 必填，获取数量。
@@ -1751,7 +1751,7 @@ Returns:
         emojiType: str,
         message_id: int = None,
     ):
-        """能力: 获取表情点赞详情 (API: /fetch_emoji_like).
+        """获取表情点赞详情
 
 Args:
     cookie(str): 必填，分页Cookie。
@@ -1782,7 +1782,7 @@ Returns:
         user_id: int = None,
         group_id: int = None,
     ):
-        """能力: 消息转发到私聊 (API: /forward_friend_single_msg).
+        """消息转发到私聊
 
 Args:
     message_id(int): 可选，消息ID。默认优先使用被回复消息 ID；未回复或解析失败时使用当前消息 ID。
@@ -1806,7 +1806,7 @@ Returns:
         message_id: int = None,
         user_id: int = None,
     ):
-        """能力: 消息转发到群 (API: /forward_group_single_msg).
+        """消息转发到群
 
 Args:
     group_id(int): 可选，目标群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
@@ -1830,7 +1830,7 @@ Returns:
         group_id: int = None,
         target_id: int = None,
     ):
-        """能力: 在群聊或私聊中发送戳一戳动作 (API: /friend_poke).
+        """在群聊或私聊中发送戳一戳动作
 
 Args:
     user_id(int): 可选，要戳的 QQ 号。默认使用当前消息发送者的用户 ID。
@@ -1856,7 +1856,7 @@ Returns:
         chat_type: str,
         group_id: int = None,
     ):
-        """能力: 获取群聊中的AI角色列表 (API: /get_ai_characters).
+        """获取群聊中的AI角色列表
 
 Args:
     chat_type(str): 必填，1 or 2?。
@@ -1878,7 +1878,7 @@ Returns:
         text: str,
         group_id: int = None,
     ):
-        """能力: 通过 AI 语音引擎获取指定文本的语音 URL (API: /get_ai_record).
+        """通过 AI 语音引擎获取指定文本的语音 URL
 
 Args:
     character(str): 必填，character_id。
@@ -1900,7 +1900,7 @@ Returns:
         self,
         event: AstrMessageEvent,
     ):
-        """能力: 获取当前登录帐号的ClientKey (API: /get_clientkey).
+        """获取当前登录帐号的ClientKey
 
 Args:
     无接口参数。
@@ -1917,7 +1917,7 @@ Returns:
         category: str,
         count: int,
     ):
-        """能力: 获取收藏列表 (API: /get_collection_list).
+        """获取收藏列表
 
 Args:
     category(str): 必填，分类ID。
@@ -1938,7 +1938,7 @@ Returns:
         event: AstrMessageEvent,
         domain: str,
     ):
-        """能力: 获取指定域名的 Cookies (API: /get_cookies).
+        """获取指定域名的 Cookies
 
 Args:
     domain(str): 必填，需要获取 cookies 的域名 默认值: 空。
@@ -1956,7 +1956,7 @@ Returns:
         event: AstrMessageEvent,
         domain: str,
     ):
-        """能力: 获取 QQ 相关接口凭证 (API: /get_credentials).
+        """获取 QQ 相关接口凭证
 
 Args:
     domain(str): 必填，需要获取 cookies 的域名 默认值: 空。
@@ -1973,7 +1973,7 @@ Returns:
         self,
         event: AstrMessageEvent,
     ):
-        """能力: 获取 CSRF Token (API: /get_csrf_token).
+        """获取 CSRF Token
 
 Args:
     无接口参数。
@@ -1989,7 +1989,7 @@ Returns:
         event: AstrMessageEvent,
         count: int,
     ):
-        """能力: 获取系统的可疑好友申请列表 (API: /get_doubt_friends_add_request).
+        """获取系统的可疑好友申请列表
 
 Args:
     count(int): 必填，获取数量。
@@ -2011,7 +2011,7 @@ Returns:
         group_id: int = None,
         emoji_type: int = None,
     ):
-        """能力: 获取消息表情点赞列表 (API: /get_emoji_likes).
+        """获取消息表情点赞列表
 
 Args:
     count(int): 必填，数量，0代表全部。
@@ -2040,7 +2040,7 @@ Returns:
         event: AstrMessageEvent,
         group_id: int = None,
     ):
-        """能力: 获取指定群聊中的精华消息列表 (API: /get_essence_msg_list).
+        """获取指定群聊中的精华消息列表
 
 Args:
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
@@ -2058,7 +2058,7 @@ Returns:
         file: str = None,
         file_id: str = None,
     ):
-        """能力: 获取指定文件的详细信息及下载路径 (API: /get_file).
+        """获取指定文件的详细信息及下载路径
 
 Args:
     file(str): 可选，文件路径、URL或Base64。
@@ -2079,7 +2079,7 @@ Returns:
         event: AstrMessageEvent,
         share_code: str,
     ):
-        """能力: 获取文件集 ID (API: /get_fileset_id).
+        """获取文件集 ID
 
 Args:
     share_code(str): 必填，分享码或分享链接。
@@ -2097,7 +2097,7 @@ Returns:
         event: AstrMessageEvent,
         fileset_id: str,
     ):
-        """能力: 获取文件集信息 (API: /get_fileset_info).
+        """获取文件集信息
 
 Args:
     fileset_id(str): 必填，文件集 ID。
@@ -2115,7 +2115,7 @@ Returns:
         event: AstrMessageEvent,
         fileset_id: str,
     ):
-        """能力: 获取闪传文件列表 (API: /get_flash_file_list).
+        """获取闪传文件列表
 
 Args:
     fileset_id(str): 必填，文件集 ID。
@@ -2135,7 +2135,7 @@ Returns:
         file_index: int = None,
         file_name: str = None,
     ):
-        """能力: 获取闪传文件链接 (API: /get_flash_file_url).
+        """获取闪传文件链接
 
 Args:
     fileset_id(str): 必填，文件集 ID。
@@ -2160,7 +2160,7 @@ Returns:
         message_id: int = None,
         id: str = None,
     ):
-        """能力: 获取合并转发消息的具体内容 (API: /get_forward_msg).
+        """获取合并转发消息的具体内容
 
 Args:
     message_id(int): 可选，消息ID。默认优先使用被回复消息 ID；未回复或解析失败时使用当前消息 ID。
@@ -2180,7 +2180,7 @@ Returns:
         event: AstrMessageEvent,
         no_cache: bool,
     ):
-        """能力: 获取当前帐号的好友列表 (API: /get_friend_list).
+        """获取当前帐号的好友列表
 
 Args:
     no_cache(bool): 必填，是否不使用缓存。
@@ -2205,7 +2205,7 @@ Returns:
         user_id: int = None,
         message_seq: int = None,
     ):
-        """能力: 获取指定好友的历史聊天记录 (API: /get_friend_msg_history).
+        """获取指定好友的历史聊天记录
 
 Args:
     count(int): 必填，获取消息数量。
@@ -2242,7 +2242,7 @@ Returns:
         self,
         event: AstrMessageEvent,
     ):
-        """能力: 获取好友分组列表 (API: /get_friends_with_category).
+        """获取好友分组列表
 
 Args:
     无接口参数。
@@ -2260,7 +2260,7 @@ Returns:
         attach_info: str,
         group_id: int = None,
     ):
-        """能力: 获取群相册列表 (API: /get_group_album_media_list).
+        """获取群相册列表
 
 Args:
     album_id(str): 必填，相册ID。
@@ -2283,7 +2283,7 @@ Returns:
         event: AstrMessageEvent,
         group_id: int = None,
     ):
-        """能力: 获取群 @全体成员 剩余次数 (API: /get_group_at_all_remain).
+        """获取群 @全体成员 剩余次数
 
 Args:
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
@@ -2300,7 +2300,7 @@ Returns:
         event: AstrMessageEvent,
         group_id: int = None,
     ):
-        """能力: 获取群聊的详细信息，包括成员数、最大成员数等 (API: /get_group_detail_info).
+        """获取群聊的详细信息，包括成员数、最大成员数等
 
 Args:
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
@@ -2317,7 +2317,7 @@ Returns:
         event: AstrMessageEvent,
         group_id: int = None,
     ):
-        """能力: 获取群聊文件系统的空间及状态信息 (API: /get_group_file_system_info).
+        """获取群聊文件系统的空间及状态信息
 
 Args:
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
@@ -2336,7 +2336,7 @@ Returns:
         group_id: int = None,
         busid: int = None,
     ):
-        """能力: 获取指定群文件的下载链接 (API: /get_group_file_url).
+        """获取指定群文件的下载链接
 
 Args:
     file_id(str): 必填，文件ID 参考 `File` 对象。
@@ -2362,7 +2362,7 @@ Returns:
         folder: str = None,
         folder_id: str = None,
     ):
-        """能力: 获取群子目录文件列表 (API: /get_group_files_by_folder).
+        """获取群子目录文件列表
 
 Args:
     file_count(int): 必填，一次性获取的文件数量。
@@ -2389,11 +2389,10 @@ Returns:
         type: str,
         group_id: int = None,
     ):
-        """能力: | type | 类型 | | ----------------- | ------------------------ | | all | 所有（默认） | | talkative | 群聊之火 | | performer | 群聊炽焰 | | legend | 龙王 | | strong_newbie | 冒尖小春笋（R.I.P） | | emotion | 快乐源泉 | (API: /get_group_honor_info).
+        """获取群荣誉信息。
 
 Args:
-    group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
-    type(str): 必填，要获取的群荣誉类型, 可传入 `talkative` `performer` `legend` `strong_newbie` `emotion` 以分别获取单个类型的群荣誉数据, 或传入 `all` 获取所有数据。
+    type(str): 可选，荣誉类型，可选 all、talkative、performer、legend、strong_newbie、emotion。
 
 Returns:
     str: 返回 API 响应的 JSON 字符串。"""
@@ -2408,7 +2407,7 @@ Returns:
         self,
         event: AstrMessageEvent,
     ):
-        """能力: 获取群被忽略的加群请求 (API: /get_group_ignore_add_request).
+        """获取群被忽略的加群请求
 
 Args:
     无接口参数。
@@ -2423,7 +2422,7 @@ Returns:
         self,
         event: AstrMessageEvent,
     ):
-        """能力: 获取被忽略的入群申请和邀请通知 (API: /get_group_ignored_notifies).
+        """获取被忽略的入群申请和邀请通知
 
 Args:
     无接口参数。
@@ -2440,7 +2439,7 @@ Returns:
         group_id: int = None,
         no_cache: bool = None,
     ):
-        """能力: 获取群聊的基本信息 (API: /get_group_info).
+        """获取群聊的基本信息
 
 Args:
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
@@ -2460,7 +2459,7 @@ Returns:
         event: AstrMessageEvent,
         group_id: int = None,
     ):
-        """能力: 获取群信息ex (API: /get_group_info_ex).
+        """获取群信息ex
 
 Args:
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
@@ -2477,7 +2476,7 @@ Returns:
         event: AstrMessageEvent,
         no_cache: bool,
     ):
-        """能力: 获取当前帐号的群聊列表 (API: /get_group_list).
+        """获取当前帐号的群聊列表
 
 Args:
     no_cache(bool): 必填，是否不使用缓存（使用缓存可能更新不及时, 但响应更快） 默认值: `false`。
@@ -2497,7 +2496,7 @@ Returns:
         group_id: int = None,
         user_id: int = None,
     ):
-        """能力: 获取群聊中指定成员的信息 (API: /get_group_member_info).
+        """获取群聊中指定成员的信息
 
 Args:
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
@@ -2520,7 +2519,7 @@ Returns:
         group_id: int = None,
         no_cache: bool = None,
     ):
-        """能力: 获取群聊中的所有成员列表 (API: /get_group_member_list).
+        """获取群聊中的所有成员列表
 
 Args:
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
@@ -2547,7 +2546,7 @@ Returns:
         group_id: int = None,
         message_seq: int = None,
     ):
-        """能力: 获取指定群聊的历史聊天记录 (API: /get_group_msg_history).
+        """获取指定群聊的历史聊天记录
 
 Args:
     count(int): 必填，获取消息数量。
@@ -2585,7 +2584,7 @@ Returns:
         event: AstrMessageEvent,
         group_id: int = None,
     ):
-        """能力: _获取群公告 (API: /_get_group_notice).
+        """_获取群公告
 
 Args:
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
@@ -2603,7 +2602,7 @@ Returns:
         file_count: int,
         group_id: int = None,
     ):
-        """能力: 获取群文件根目录下的所有文件和文件夹 (API: /get_group_root_files).
+        """获取群文件根目录下的所有文件和文件夹
 
 Args:
     file_count(int): 必填，文件数量。
@@ -2623,7 +2622,7 @@ Returns:
         event: AstrMessageEvent,
         group_id: int = None,
     ):
-        """能力: 获取群禁言列表 (API: /get_group_shut_list).
+        """获取群禁言列表
 
 Args:
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
@@ -2640,7 +2639,7 @@ Returns:
         event: AstrMessageEvent,
         count: int,
     ):
-        """能力: 获取群系统消息 (API: /get_group_system_msg).
+        """获取群系统消息
 
 Args:
     count(int): 必填，获取的消息数量。
@@ -2659,7 +2658,7 @@ Returns:
         guild_id: str = None,
         no_cache: bool = None,
     ):
-        """能力: 获取子频道列表 (API: /get_guild_channel_list).
+        """获取子频道列表
 
 Args:
     guild_id(str): 可选，频道ID。
@@ -2679,7 +2678,7 @@ Returns:
         self,
         event: AstrMessageEvent,
     ):
-        """能力: get_guild_list (API: /get_guild_list).
+        """get_guild_list
 
 Args:
     无接口参数。
@@ -2696,7 +2695,7 @@ Returns:
         guild_id: str = None,
         next_token: str = None,
     ):
-        """能力: 获取频道成员列表 (API: /get_guild_member_list).
+        """获取频道成员列表
 
 Args:
     guild_id(str): 可选，频道ID。
@@ -2718,7 +2717,7 @@ Returns:
         user_id: int = None,
         guild_id: str = None,
     ):
-        """能力: 单独获取频道成员信息 (API: /get_guild_member_profile).
+        """单独获取频道成员信息
 
 Args:
     guild_id(str): 可选，频道ID。
@@ -2739,7 +2738,7 @@ Returns:
         event: AstrMessageEvent,
         guild_id: str = None,
     ):
-        """能力: 通过访客获取频道元数据 (API: /get_guild_meta_by_guest).
+        """通过访客获取频道元数据
 
 Args:
     guild_id(str): 可选，频道ID。
@@ -2758,7 +2757,7 @@ Returns:
         message_id: int = None,
         no_cache: bool = None,
     ):
-        """能力: 获取频道消息 (API: /get_guild_msg).
+        """获取频道消息
 
 Args:
     message_id(int): 可选，频道消息ID。默认优先使用被回复消息 ID；未回复或解析失败时使用当前消息 ID。
@@ -2778,7 +2777,7 @@ Returns:
         event: AstrMessageEvent,
         guild_id: str,
     ):
-        """能力: 获取频道角色列表 (API: /get_guild_roles).
+        """获取频道角色列表
 
 Args:
     guild_id(str): 必填，频道ID。
@@ -2795,7 +2794,7 @@ Returns:
         self,
         event: AstrMessageEvent,
     ):
-        """能力: get_guild_service_profile (API: /get_guild_service_profile).
+        """get_guild_service_profile
 
 Args:
     无接口参数。
@@ -2812,7 +2811,7 @@ Returns:
         file: str,
         file_id: str = None,
     ):
-        """能力: 获取指定图片的信息及路径 (API: /get_image).
+        """获取指定图片的信息及路径
 
 Args:
     file(str): 必填，收到的图片文件名（消息段的 `file` 参数），如 `6B4DE3DFD1BD271E3297859D41C530F5.jpg`。
@@ -2832,7 +2831,7 @@ Returns:
         self,
         event: AstrMessageEvent,
     ):
-        """能力: 获取当前登录帐号的信息 (API: /get_login_info).
+        """获取当前登录帐号的信息
 
 Args:
     无接口参数。
@@ -2847,7 +2846,7 @@ Returns:
     #     self,
     #     event: AstrMessageEvent,
     # ):
-    #     """能力: 获取小程序 Ark (API: /get_mini_app_ark).
+    #     """获取小程序 Ark
     #
     # Args:
     #     无接口参数。
@@ -2863,7 +2862,7 @@ Returns:
         event: AstrMessageEvent,
         model: str,
     ):
-        """能力: _获取在线机型 (API: /_get_model_show).
+        """_获取在线机型
 
 Args:
     model(str): 必填，模型名称。
@@ -2881,7 +2880,7 @@ Returns:
         event: AstrMessageEvent,
         message_id: int = None,
     ):
-        """能力: 根据消息 ID 获取消息详细信息 (API: /get_msg).
+        """根据消息 ID 获取消息详细信息
 
 Args:
     message_id(int): 可选，消息 ID。默认优先使用被回复消息 ID；未回复或解析失败时使用当前消息 ID。
@@ -2898,7 +2897,7 @@ Returns:
         event: AstrMessageEvent,
         no_cache: bool = None,
     ):
-        """能力: 获取当前登录账号的在线客户端列表 (API: /get_online_clients).
+        """获取当前登录账号的在线客户端列表
 
 Args:
     no_cache(bool): 可选，是否无视缓存。
@@ -2916,7 +2915,7 @@ Returns:
         event: AstrMessageEvent,
         user_id: int = None,
     ):
-        """能力: 获取在线文件消息 (API: /get_online_file_msg).
+        """获取在线文件消息
 
 Args:
     user_id(int): 可选，用户 QQ。默认使用当前消息发送者的用户 ID。
@@ -2933,7 +2932,7 @@ Returns:
         event: AstrMessageEvent,
         file_id: str,
     ):
-        """能力: 获取指定私聊文件的下载链接 (API: /get_private_file_url).
+        """获取指定私聊文件的下载链接
 
 Args:
     file_id(str): 必填，文件ID。
@@ -2953,7 +2952,7 @@ Returns:
         start: int,
         user_id: int = None,
     ):
-        """能力: 获取点赞列表 (API: /get_profile_like).
+        """获取点赞列表
 
 Args:
     count(int): 必填，获取数量。
@@ -2978,7 +2977,7 @@ Returns:
         group_id: int = None,
         attach_info: str = None,
     ):
-        """能力: 获取群相册列表 (API: /get_qun_album_list).
+        """获取群相册列表
 
 Args:
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
@@ -2998,7 +2997,7 @@ Returns:
         event: AstrMessageEvent,
         count: int,
     ):
-        """能力: 获取的最新消息是每个会话最新的消息 (API: /get_recent_contact).
+        """获取的最新消息是每个会话最新的消息
 
 Args:
     count(int): 必填，获取的数量。
@@ -3018,7 +3017,7 @@ Returns:
         out_format: str,
         file_id: str = None,
     ):
-        """能力: 获取指定语音文件的信息，并支持格式转换 (API: /get_record).
+        """获取指定语音文件的信息，并支持格式转换
 
 Args:
     file(str): 必填，收到的语音文件名（消息段的 `file` 参数）, 如 `0B38145AA44505000B38145AA4450500.silk`。
@@ -3041,7 +3040,7 @@ Returns:
         self,
         event: AstrMessageEvent,
     ):
-        """能力: 获取rkey (API: /get_rkey).
+        """获取rkey
 
 Args:
     无接口参数。
@@ -3056,7 +3055,7 @@ Returns:
         self,
         event: AstrMessageEvent,
     ):
-        """能力: 获取 RKey 服务器 (API: /get_rkey_server).
+        """获取 RKey 服务器
 
 Args:
     无接口参数。
@@ -3071,7 +3070,7 @@ Returns:
         self,
         event: AstrMessageEvent,
     ):
-        """能力: 获取机器人 UIN 范围 (API: /get_robot_uin_range).
+        """获取机器人 UIN 范围
 
 Args:
     无接口参数。
@@ -3087,7 +3086,7 @@ Returns:
         event: AstrMessageEvent,
         fileset_id: str,
     ):
-        """能力: 获取文件分享链接 (API: /get_share_link).
+        """获取文件分享链接
 
 Args:
     fileset_id(str): 必填，文件集 ID。
@@ -3104,7 +3103,7 @@ Returns:
         self,
         event: AstrMessageEvent,
     ):
-        """能力: 获取状态 (API: /get_status).
+        """获取状态
 
 Args:
     无接口参数。
@@ -3121,7 +3120,7 @@ Returns:
         no_cache: bool,
         user_id: int = None,
     ):
-        """能力: 获取账号信息 (API: /get_stranger_info).
+        """获取账号信息
 
 Args:
     no_cache(bool): 必填，是否不使用缓存（使用缓存可能更新不及时, 但响应更快） 默认值: `false`。
@@ -3142,7 +3141,7 @@ Returns:
         channel_id: str = None,
         guild_id: str = None,
     ):
-        """能力: 获取话题频道帖子 (API: /get_topic_channel_feeds).
+        """获取话题频道帖子
 
 Args:
     channel_id(str): 可选，子频道ID。
@@ -3162,7 +3161,7 @@ Returns:
         self,
         event: AstrMessageEvent,
     ):
-        """能力: 获取单向好友列表 (API: /get_unidirectional_friend_list).
+        """获取单向好友列表
 
 Args:
     无接口参数。
@@ -3177,7 +3176,7 @@ Returns:
         self,
         event: AstrMessageEvent,
     ):
-        """能力: 获取版本信息 (API: /get_version_info).
+        """获取版本信息
 
 Args:
     无接口参数。
@@ -3195,7 +3194,7 @@ Returns:
         user_id: int = None,
         target_id: int = None,
     ):
-        """能力: 在群聊或私聊中发送戳一戳动作 (API: /group_poke).
+        """在群聊或私聊中发送戳一戳动作
 
 Args:
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
@@ -3216,7 +3215,7 @@ Returns:
         self,
         event: AstrMessageEvent,
     ):
-        """能力: _设置所有消息已读 (API: /_mark_all_as_read).
+        """_设置所有消息已读
 
 Args:
     无接口参数。
@@ -3234,7 +3233,7 @@ Returns:
         message_id: int = None,
         user_id: int = None,
     ):
-        """能力: 标记指定渠道的消息为已读 (API: /mark_group_msg_as_read).
+        """标记指定渠道的消息为已读
 
 Args:
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
@@ -3259,7 +3258,7 @@ Returns:
         message_id: int = None,
         user_id: int = None,
     ):
-        """能力: 标记指定渠道的消息为已读 (API: /mark_msg_as_read).
+        """标记指定渠道的消息为已读
 
 Args:
     group_id(int): 可选，与user_id二选一。
@@ -3285,7 +3284,7 @@ Returns:
         group_id: int = None,
         message_id: int = None,
     ):
-        """能力: 标记指定渠道的消息为已读 (API: /mark_private_msg_as_read).
+        """标记指定渠道的消息为已读
 
 Args:
     user_id(int): 可选，用户QQ。默认使用当前消息发送者的用户 ID。
@@ -3311,7 +3310,7 @@ Returns:
         target_parent_directory: str,
         group_id: int = None,
     ):
-        """能力: 移动群文件 (API: /move_group_file).
+        """移动群文件
 
 Args:
     current_parent_directory(str): 必填，根目录填 /。
@@ -3336,7 +3335,7 @@ Returns:
         self,
         event: AstrMessageEvent,
     ):
-        """能力: 获取底层Packet服务的运行状态 (API: /nc_get_packet_status).
+        """获取底层Packet服务的运行状态
 
 Args:
     无接口参数。
@@ -3351,7 +3350,7 @@ Returns:
         self,
         event: AstrMessageEvent,
     ):
-        """能力: nc获取rkey (API: /nc_get_rkey).
+        """nc获取rkey
 
 Args:
     无接口参数。
@@ -3367,7 +3366,7 @@ Returns:
         event: AstrMessageEvent,
         user_id: int = None,
     ):
-        """能力: 获取用户在线状态 (API: /nc_get_user_status).
+        """获取用户在线状态
 
 Args:
     user_id(int): 可选，QQ号。默认使用当前消息发送者的用户 ID。
@@ -3384,7 +3383,7 @@ Returns:
         event: AstrMessageEvent,
         image: str,
     ):
-        """能力: 仅 Windows 可用 (API: /ocr_image).
+        """仅 Windows 可用
 
 Args:
     image(str): 必填，图片路径、URL或Base64。
@@ -3401,7 +3400,7 @@ Returns:
         self,
         event: AstrMessageEvent,
     ):
-        """能力: 获取企点账号信息 (API: /qidian_get_account_info).
+        """获取企点账号信息
 
 Args:
     无接口参数。
@@ -3419,7 +3418,7 @@ Returns:
         msg_id: str,
         user_id: int = None,
     ):
-        """能力: 接收在线文件 (API: /receive_online_file).
+        """接收在线文件
 
 Args:
     element_id(str): 必填，元素 ID。
@@ -3444,7 +3443,7 @@ Returns:
         msg_id: str,
         user_id: int = None,
     ):
-        """能力: 拒绝在线文件 (API: /refuse_online_file).
+        """拒绝在线文件
 
 Args:
     element_id(str): 必填，元素 ID。
@@ -3467,7 +3466,7 @@ Returns:
         event: AstrMessageEvent,
         file: str,
     ):
-        """能力: 重载事件过滤器 (API: /reload_event_filter).
+        """重载事件过滤器
 
 Args:
     file(str): 必填，事件过滤器文件。
@@ -3488,7 +3487,7 @@ Returns:
         new_name: str,
         group_id: int = None,
     ):
-        """能力: 重命名群文件 (API: /rename_group_file).
+        """重命名群文件
 
 Args:
     current_parent_directory(str): 必填，当前父目录。
@@ -3518,7 +3517,7 @@ Returns:
         send_group_id: int = None,
         send_user_id: int = None,
     ):
-        """能力: 获取用户推荐 Ark 卡片并自动发送到群聊或私聊 (API: /send_ark_share).
+        """获取用户推荐 Ark 卡片并自动发送到群聊或私聊
 
 Args:
     phone_number(str): 必填，手机号。
@@ -3548,7 +3547,7 @@ Returns:
         group_id: int = None,
         user_id: int = None,
     ):
-        """能力: 发送闪传消息 (API: /send_flash_msg).
+        """发送闪传消息
 
 Args:
     fileset_id(str): 必填，文件集 ID。
@@ -3582,7 +3581,7 @@ Returns:
         summary: str = None,
         timeout: int = None,
     ):
-        """能力: 发送合并转发消息 (API: /send_forward_msg).
+        """发送合并转发消息
 
 Args:
     message(str): 必填，See source API docs。
@@ -3632,7 +3631,7 @@ Returns:
         text: str,
         group_id: int = None,
     ):
-        """能力: 发送 AI 生成的语音到指定群聊 (API: /send_group_ai_record).
+        """发送 AI 生成的语音到指定群聊
 
 Args:
     character(str): 必填，character_id。
@@ -3657,7 +3656,7 @@ Returns:
         send_group_id: int = None,
         send_user_id: int = None,
     ):
-        """能力: 获取群分享 Ark 卡片并自动发送到群聊或私聊 (API: /send_group_ark_share).
+        """获取群分享 Ark 卡片并自动发送到群聊或私聊
 
 Args:
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
@@ -3688,7 +3687,7 @@ Returns:
         summary: str = None,
         timeout: int = None,
     ):
-        """能力: 发送群合并转发消息 (API: /send_group_forward_msg).
+        """发送群合并转发消息
 
 Args:
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
@@ -3744,7 +3743,7 @@ Returns:
         summary: str = None,
         timeout: int = None,
     ):
-        """能力: 发送群消息 (API: /send_group_msg).
+        """发送群消息
 
 Args:
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
@@ -3795,7 +3794,7 @@ Returns:
         group_id: int = None,
         image: str = None,
     ):
-        """能力: _发送群公告 (API: /_send_group_notice).
+        """_发送群公告
 
 Args:
     confirm_required(str): 必填，是否需要确认 (0/1)。
@@ -3833,7 +3832,7 @@ Returns:
         event: AstrMessageEvent,
         group_id: int = None,
     ):
-        """能力: 群打卡 (API: /send_group_sign).
+        """群打卡
 
 Args:
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
@@ -3852,7 +3851,7 @@ Returns:
         guild_id: str = None,
         message: str = None,
     ):
-        """能力: 发送信息到子频道 (API: /send_guild_channel_msg).
+        """发送信息到子频道
 
 Args:
     channel_id(str): 可选，子频道ID。
@@ -3877,7 +3876,7 @@ Returns:
         times: int,
         user_id: int = None,
     ):
-        """能力: 给指定用户点赞 (API: /send_like).
+        """给指定用户点赞
 
 Args:
     times(int): 必填，赞的次数，每个好友每天最多 10 次 默认值: 1。
@@ -3906,7 +3905,7 @@ Returns:
         summary: str = None,
         timeout: int = None,
     ):
-        """能力: send_msg (API: /send_msg).
+        """send_msg
 
 Args:
     group_id(int): 可选，群号 ( 消息类型为 `group` 时需要 )。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
@@ -3951,7 +3950,7 @@ Returns:
         user_id: int = None,
         file_name: str = None,
     ):
-        """能力: 发送在线文件 (API: /send_online_file).
+        """发送在线文件
 
 Args:
     file_path(str): 必填，本地文件路径。
@@ -3976,7 +3975,7 @@ Returns:
         user_id: int = None,
         folder_name: str = None,
     ):
-        """能力: 发送在线文件夹 (API: /send_online_folder).
+        """发送在线文件夹
 
 Args:
     folder_path(str): 必填，本地文件夹路径。
@@ -4001,7 +4000,7 @@ Returns:
         data: str,
         rsp: str,
     ):
-        """能力: 发送原始数据包 (API: /send_packet).
+        """发送原始数据包
 
 Args:
     cmd(str): 必填，命令字。
@@ -4027,7 +4026,7 @@ Returns:
         group_id: int = None,
         target_id: int = None,
     ):
-        """能力: 在群聊或私聊中发送戳一戳动作 (API: /send_poke).
+        """在群聊或私聊中发送戳一戳动作
 
 Args:
     user_id(int): 可选，要戳的 QQ 号。默认使用当前消息发送者的用户 ID。
@@ -4062,7 +4061,7 @@ Returns:
         summary: str = None,
         timeout: int = None,
     ):
-        """能力: 发送私聊合并转发消息 (API: /send_private_forward_msg).
+        """发送私聊合并转发消息
 
 Args:
     message(str): 必填，See source API docs。
@@ -4118,7 +4117,7 @@ Returns:
         summary: str = None,
         timeout: int = None,
     ):
-        """能力: send_private_msg (API: /send_private_msg).
+        """send_private_msg
 
 Args:
     group_id(int): 可选，主动发起临时会话时的来源群号(可选, 机器人本身必须是管理员/群主)。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
@@ -4163,7 +4162,7 @@ Returns:
         face_type: str,
         wording: str,
     ):
-        """能力: 设置自定义在线状态 (API: /set_diy_online_status).
+        """设置自定义在线状态
 
 Args:
     face_id(str): 必填，图标ID。
@@ -4188,7 +4187,7 @@ Returns:
         approve: bool,
         flag: str,
     ):
-        """能力: 同意或拒绝系统的可疑好友申请 (API: /set_doubt_friends_add_request).
+        """同意或拒绝系统的可疑好友申请
 
 Args:
     approve(bool): 必填，是否同意 (强制为 true)。
@@ -4209,7 +4208,7 @@ Returns:
         event: AstrMessageEvent,
         message_id: int = None,
     ):
-        """能力: 将一条消息设置为群精华消息 (API: /set_essence_msg).
+        """将一条消息设置为群精华消息
 
 Args:
     message_id(int): 可选，消息ID。默认优先使用被回复消息 ID；未回复或解析失败时使用当前消息 ID。
@@ -4228,7 +4227,7 @@ Returns:
         flag: str,
         remark: str,
     ):
-        """能力: 同意或拒绝加好友请求 (API: /set_friend_add_request).
+        """同意或拒绝加好友请求
 
 Args:
     approve(bool): 必填，是否同意请求 默认值: `true`。
@@ -4253,7 +4252,7 @@ Returns:
         remark: str,
         user_id: int = None,
     ):
-        """能力: 设置好友备注 (API: /set_friend_remark).
+        """设置好友备注
 
 Args:
     remark(str): 必填，备注内容。
@@ -4276,7 +4275,7 @@ Returns:
         group_answer: str = None,
         group_question: str = None,
     ):
-        """能力: 设置群加群选项 (API: /set_group_add_option).
+        """设置群加群选项
 
 Args:
     add_type(int): 必填，加群方式。
@@ -4305,7 +4304,7 @@ Returns:
         count: int = None,
         reason: str = None,
     ):
-        """能力: 同意或拒绝加群请求或邀请 (API: /set_group_add_request).
+        """同意或拒绝加群请求或邀请
 
 Args:
     approve(bool): 必填，是否同意请求／邀请 默认值: `true`。
@@ -4334,7 +4333,7 @@ Returns:
         group_id: int = None,
         user_id: int = None,
     ):
-        """能力: 设置群管理 (API: /set_group_admin).
+        """设置群管理
 
 Args:
     enable(bool): 必填，true 为设置, false 为取消 默认值: `true`。
@@ -4360,7 +4359,7 @@ Returns:
         set: bool,
         group_id: int = None,
     ):
-        """能力: 点赞群相册 (API: /set_group_album_media_like).
+        """点赞群相册
 
 Args:
     album_id(str): 必填，相册ID。
@@ -4390,7 +4389,7 @@ Returns:
         group_id: int = None,
         enable: bool = None,
     ):
-        """能力: 群组匿名 (API: /set_group_anonymous).
+        """群组匿名
 
 Args:
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
@@ -4414,7 +4413,7 @@ Returns:
         duration: int = None,
         flag: str = None,
     ):
-        """能力: 群组匿名用户禁言 (API: /set_group_anonymous_ban).
+        """群组匿名用户禁言
 
 Args:
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
@@ -4445,7 +4444,7 @@ Returns:
         group_id: int = None,
         user_id: int = None,
     ):
-        """能力: 群禁言 (API: /set_group_ban).
+        """群禁言
 
 Args:
     duration(int): 必填，禁言时长, 单位秒, 0 表示取消禁言 默认值: `30 * 60`。
@@ -4469,7 +4468,7 @@ Returns:
         user_id: int = None,
         card: str = None,
     ):
-        """能力: 设置群聊中指定成员的群名片 (API: /set_group_card).
+        """设置群聊中指定成员的群名片
 
 Args:
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
@@ -4493,7 +4492,7 @@ Returns:
         user_id: int = None,
         reject_add_request: bool = None,
     ):
-        """能力: 将指定成员踢出群聊 (API: /set_group_kick).
+        """将指定成员踢出群聊
 
 Args:
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
@@ -4517,7 +4516,7 @@ Returns:
         user_id: int = None,
         reject_add_request: bool = None,
     ):
-        """能力: 从指定群聊中批量踢出多个成员 (API: /set_group_kick_members).
+        """从指定群聊中批量踢出多个成员
 
 Args:
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
@@ -4540,7 +4539,7 @@ Returns:
         group_id: int = None,
         is_dismiss: bool = None,
     ):
-        """能力: 退出或解散指定群聊 (API: /set_group_leave).
+        """退出或解散指定群聊
 
 Args:
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
@@ -4561,7 +4560,7 @@ Returns:
         group_name: str,
         group_id: int = None,
     ):
-        """能力: 设置群名 (API: /set_group_name).
+        """设置群名
 
 Args:
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
@@ -4583,7 +4582,7 @@ Returns:
         group_id: int = None,
         cache: int = None,
     ):
-        """能力: 修改指定群聊的头像 (API: /set_group_portrait).
+        """修改指定群聊的头像
 
 Args:
     file(str): 必填，头像文件路径或 URL。
@@ -4607,7 +4606,7 @@ Returns:
         remark: str,
         group_id: int = None,
     ):
-        """能力: 设置群备注 (API: /set_group_remark).
+        """设置群备注
 
 Args:
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
@@ -4629,7 +4628,7 @@ Returns:
         robot_member_examine: int = None,
         robot_member_switch: int = None,
     ):
-        """能力: 设置群机器人加群选项 (API: /set_group_robot_add_option).
+        """设置群机器人加群选项
 
 Args:
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
@@ -4654,7 +4653,7 @@ Returns:
         no_code_finger_open: int = None,
         no_finger_open: int = None,
     ):
-        """能力: 设置群搜索 (API: /set_group_search).
+        """设置群搜索
 
 Args:
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
@@ -4677,7 +4676,7 @@ Returns:
         event: AstrMessageEvent,
         group_id: int = None,
     ):
-        """能力: 群打卡 (API: /set_group_sign).
+        """群打卡
 
 Args:
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
@@ -4697,7 +4696,7 @@ Returns:
         user_id: int = None,
         duration: int = None,
     ):
-        """能力: 设置群聊中指定成员的专属头衔 (API: /set_group_special_title).
+        """设置群聊中指定成员的专属头衔
 
 Args:
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
@@ -4724,7 +4723,7 @@ Returns:
         message_id: int = None,
         message_seq: int = None,
     ):
-        """能力: 设置群代办 (API: /set_group_todo).
+        """设置群代办
 
 Args:
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
@@ -4747,7 +4746,7 @@ Returns:
         enable: bool,
         group_id: int = None,
     ):
-        """能力: 全体禁言 (API: /set_group_whole_ban).
+        """全体禁言
 
 Args:
     enable(bool): 必填，是否开启全员禁言 默认值: `true`。
@@ -4770,7 +4769,7 @@ Returns:
         set: bool = None,
         users: str = None,
     ):
-        """能力: 设置用户在频道中的角色 (API: /set_guild_member_role).
+        """设置用户在频道中的角色
 
 Args:
     guild_id(str): 必填，频道ID。
@@ -4798,7 +4797,7 @@ Returns:
         event_type: int,
         user_id: int = None,
     ):
-        """能力: 设置输入状态 (API: /set_input_status).
+        """设置输入状态
 
 Args:
     event_type(int): 必填，事件类型。
@@ -4819,7 +4818,7 @@ Returns:
         model: str = None,
         model_show: str = None,
     ):
-        """能力: _设置在线机型 (API: /_set_model_show).
+        """_设置在线机型
 
 Args:
     model(str): 可选，机型名称。
@@ -4842,7 +4841,7 @@ Returns:
         set: bool,
         message_id: int = None,
     ):
-        """能力: 设置消息表情点赞 (API: /set_msg_emoji_like).
+        """设置消息表情点赞
 
 Args:
     emoji_id(int): 必填，表情ID。
@@ -4869,7 +4868,7 @@ Returns:
         extStatus: int,
         status: int,
     ):
-        """能力: ## 状态列表 ### 在线 ```json5; { "status": 10, "ext_status": 0, "battery_status": 0; } ``` ### Q我吧 ```json5; { "status": 60, "ext_status": 0, "battery_status": 0; } ``` ### 离开 ```json5; { "status": 30, "ext_status": 0, "battery_status": 0; } ``` ### 忙碌 ```json5; { " (API: /set_online_status).
+        """## 状态列表 ### 在线 ```json5; { "status": 10, "ext_status": 0, "battery_status": 0; } ``` ### Q我吧 ```json5; { "status": 60, "ext_status": 0, "battery_status": 0; } ``` ### 离开 ```json5; { "status": 30, "ext_status": 0, "battery_status": 0; } ``` ### 忙碌 ```json5; { "
 
 Args:
     battery_status(str): 必填，电量状态。
@@ -4899,7 +4898,7 @@ Returns:
         event: AstrMessageEvent,
         file: str,
     ):
-        """能力: 修改当前账号的QQ头像 (API: /set_qq_avatar).
+        """修改当前账号的QQ头像
 
 Args:
     file(str): 必填，图片路径、URL或Base64。
@@ -4919,7 +4918,7 @@ Returns:
         personal_note: str = None,
         sex: str = None,
     ):
-        """能力: 修改当前账号的昵称、个性签名等资料 (API: /set_qq_profile).
+        """修改当前账号的昵称、个性签名等资料
 
 Args:
     nickname(str): 必填，昵称。
@@ -4943,7 +4942,7 @@ Returns:
         event: AstrMessageEvent,
         delay: int = None,
     ):
-        """能力: 重启服务 (API: /set_restart).
+        """重启服务
 
 Args:
     delay(int): 可选，要延迟的毫秒数, 如果默认情况下无法重启, 可以尝试设置延迟为 2000 左右 默认值: `0`。
@@ -4961,7 +4960,7 @@ Returns:
         event: AstrMessageEvent,
         longNick: str,
     ):
-        """能力: 修改当前登录帐号的个性签名 (API: /set_self_longnick).
+        """修改当前登录帐号的个性签名
 
 Args:
     longNick(str): 必填，签名内容。
@@ -4979,7 +4978,7 @@ Returns:
         event: AstrMessageEvent,
         error: bool = None,
     ):
-        """能力: 流式下载测试 (API: /test_download_stream).
+        """流式下载测试
 
 Args:
     error(bool): 可选，是否触发测试错误。
@@ -4998,7 +4997,7 @@ Returns:
         file_id: str,
         group_id: int = None,
     ):
-        """能力: 传输群文件 (API: /trans_group_file).
+        """传输群文件
 
 Args:
     file_id(str): 必填，文件ID。
@@ -5018,7 +5017,7 @@ Returns:
     #     event: AstrMessageEvent,
     #     words: list,
     # ):
-    #     """能力: 将英文单词列表翻译为中文 (API: /translate_en2zh).
+    #     """将英文单词列表翻译为中文
     #
     # Args:
     #     words(list): 必填，待翻译单词列表。
@@ -5037,7 +5036,7 @@ Returns:
         self,
         event: AstrMessageEvent,
     ):
-        """能力: unknown (API: /unknown).
+        """unknown
 
 Args:
     无接口参数。
@@ -5057,7 +5056,7 @@ Returns:
         role_id: str,
         independent: bool = None,
     ):
-        """能力: 修改频道角色 (API: /update_guild_role).
+        """修改频道角色
 
 Args:
     color(str): 必填，颜色(示例:4294927682)。
@@ -5097,7 +5096,7 @@ Returns:
         total_chunks: int = None,
         verify_only: bool = None,
     ):
-        """能力: 以流式方式上传文件数据到机器人 (API: /upload_file_stream).
+        """以流式方式上传文件数据到机器人
 
 Args:
     file_retention(int): 必填，默认5分钟回收 不设置或0为不回收。
@@ -5150,7 +5149,7 @@ Returns:
         folder: str = None,
         folder_id: str = None,
     ):
-        """能力: 上传资源路径或URL指定的文件到指定群聊的文件系统中 (API: /upload_group_file).
+        """上传资源路径或URL指定的文件到指定群聊的文件系统中
 
 Args:
     file(str): 必填，资源路径或URL。
@@ -5185,7 +5184,7 @@ Returns:
         file: str = None,
         group_id: int = None,
     ):
-        """能力: 上传图片到群相册 (API: /upload_image_to_qun_album)。调用前通常需要先使用 napcat_get_qun_album_list 获取相册 ID 和相册名称。
+        """上传图片到群相册。调用前通常需要先使用 napcat_get_qun_album_list 获取相册 ID 和相册名称。
 
 Args:
     album_id(str): 必填，相册ID。
@@ -5213,7 +5212,7 @@ Returns:
         upload_file: bool,
         user_id: int = None,
     ):
-        """能力: 上传本地文件到指定私聊会话中 (API: /upload_private_file).
+        """上传本地文件到指定私聊会话中
 
 Args:
     file(str): 必填，资源路径或URL。

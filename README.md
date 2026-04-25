@@ -7,6 +7,7 @@
 - 基于 `docs/napcat-apifox`、`docs/onebot-11` 和 `docs/go-cqhttp` 生成工具定义。
 - 每个发现到的用户 API 都有一个显式 `@filter.llm_tool` 方法，工具名格式为 `napcat_<接口名>`。
 - 具体接口工具使用字段级参数，例如 `group_id`、`user_id`、`message`，不要求 LLM 传入统一 `payload`。
+- 工具能力提示保持为面向 LLM 的短句，不在能力描述中重复 `能力:`、API 路径或 Markdown 表格。
 - 复用 AstrBot 默认接入 NapCat 的 `AiocqhttpMessageEvent` 和当前事件的 `event.bot.api.call_action`，不自建 HTTP 客户端。
 - 初始化时创建工具管理数据库 `napcat_fc_tools.db`，记录工具名、API、能力、参数、平台限制和启用状态，供动态工具发现使用。
 - NapCat 工具默认不作为全局 active 工具常驻暴露，而是在 `on_llm_request(priority=-100)` 阶段按搜索发现结果和数据库状态注入到当前请求。

@@ -123,4 +123,5 @@ def _read_capability(doc: str) -> str:
     first_line = next((line.strip() for line in doc.splitlines() if line.strip()), "")
     if first_line.startswith("能力:"):
         first_line = first_line.removeprefix("能力:").strip()
-    return re.sub(r"\s*\(API:\s*[^)]+\)\.?\s*$", "", first_line).strip().rstrip("。")
+    first_line = re.sub(r"\s*\(API:\s*[^)]+\)\.?\s*$", "", first_line)
+    return first_line.strip().rstrip("。.")

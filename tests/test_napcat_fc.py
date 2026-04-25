@@ -684,6 +684,15 @@ def test_build_tool_registry_data_extracts_tool_discovery_metadata():
     assert json.loads(by_name["napcat_get_login_info"].platforms_json) == []
 
 
+def test_tool_capability_prompts_are_concise_for_llm_discovery():
+    records = build_tool_registry_data(NapCatFunctionToolsPlugin)
+
+    for record in records:
+        assert not record.capability.startswith("能力:")
+        assert "API:" not in record.capability
+        assert "|" not in record.capability
+
+
 def test_ark_share_tools_describe_auto_send_targets():
     records = build_tool_registry_data(NapCatFunctionToolsPlugin)
     by_name = {record.tool_name: record for record in records}

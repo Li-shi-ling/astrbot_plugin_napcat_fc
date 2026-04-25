@@ -749,6 +749,21 @@ def test_optimized_tool_prompts_include_searchable_context():
     assert "群共享文件系统" in by_name["napcat_upload_group_file"].capability
 
 
+def test_pending_delete_document_tracks_low_value_tool_candidates():
+    pending_delete = Path(__file__).resolve().parents[1] / "待删除.md"
+    text = pending_delete.read_text(encoding="utf-8")
+
+    assert "建议优先删除" in text
+    assert "建议默认禁用或隐藏" in text
+    assert "可与其他工具合并" in text
+    assert "不建议删除但应限制发现" in text
+    assert "`napcat_unknown`" in text
+    assert "`napcat_send_packet`" in text
+    assert "`napcat_get_credentials`" in text
+    assert "`napcat_send_msg`" in text
+    assert "`napcat_set_group_kick_members`" in text
+
+
 def test_ark_share_tools_describe_auto_send_targets():
     records = build_tool_registry_data(NapCatFunctionToolsPlugin)
     by_name = {record.tool_name: record for record in records}

@@ -31,7 +31,7 @@ from napcat_fc.tool_registry import build_tool_registry_data
     "astrbot_plugin_napcat_fc",
     "Soulter / AstrBot contributors",
     "将 NapCat / OneBot / go-cqhttp API 注册为 AstrBot 函数工具。",
-    "1.15.1",
+    "1.15.2",
 )
 class NapCatFunctionToolsPlugin(Star):
     SEARCH_TOOL_NAME = "napcat_search_tools"
@@ -57,7 +57,7 @@ class NapCatFunctionToolsPlugin(Star):
     def __init__(self, context: Context, config: dict = None):
         super().__init__(context)
         self.config = dict(config or {})
-        self.tool_count = 181
+        self.tool_count = 180
         self.tool_registry_records = build_tool_registry_data(type(self))
         self.action_parameter_names = self._build_action_parameter_names()
         self.napcat_tool_names = tuple(
@@ -2640,20 +2640,20 @@ Returns:
         payload: dict = {}
         return await self._call_napcat_api(event, 'get_login_info', payload)
 
-    @filter.llm_tool(name='napcat_get_mini_app_ark')
-    async def napcat_get_mini_app_ark_tool(
-        self,
-        event: AstrMessageEvent,
-    ):
-        """能力: 获取小程序 Ark (API: /get_mini_app_ark).
-
-Args:
-    无接口参数。
-
-Returns:
-    str: 返回 API 响应的 JSON 字符串。"""
-        payload: dict = {}
-        return await self._call_napcat_api(event, 'get_mini_app_ark', payload)
+    # @filter.llm_tool(name='napcat_get_mini_app_ark')
+    # async def napcat_get_mini_app_ark_tool(
+    #     self,
+    #     event: AstrMessageEvent,
+    # ):
+    #     """能力: 获取小程序 Ark (API: /get_mini_app_ark).
+    #
+    # Args:
+    #     无接口参数。
+    #
+    # Returns:
+    #     str: 返回 API 响应的 JSON 字符串。"""
+    #     payload: dict = {}
+    #     return await self._call_napcat_api(event, 'get_mini_app_ark', payload)
 
     @filter.llm_tool(name='napcat_get_model_show')
     async def napcat_get_model_show_tool(

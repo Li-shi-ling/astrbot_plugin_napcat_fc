@@ -1,5 +1,10 @@
 ﻿# 更新日志
 
+## v1.15.2 - 2026-04-25
+
+- 临时禁用 `napcat_get_mini_app_ark` 工具注册，避免老版本 NapCat 不兼容 `/get_mini_app_ark` 接口。
+- 工具管理数据库同步数量调整为 180 个，并新增回归测试确认该工具不会进入动态发现和注入。
+
 ## v1.15.1 - 2026-04-25
 
 - 临时禁用 `napcat_translate_en2zh` 工具注册，避免当前 NapCat 版本中 `/translate_en2zh` 接口异常影响工具调用。

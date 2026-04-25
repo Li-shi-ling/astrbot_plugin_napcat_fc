@@ -626,6 +626,13 @@ def test_translate_en2zh_tool_is_disabled_for_current_napcat_version():
     assert "napcat_translate_en2zh" not in {record.tool_name for record in records}
 
 
+def test_get_mini_app_ark_tool_is_disabled_for_old_napcat_versions():
+    records = build_tool_registry_data(NapCatFunctionToolsPlugin)
+
+    assert not hasattr(NapCatFunctionToolsPlugin, "napcat_get_mini_app_ark_tool")
+    assert "napcat_get_mini_app_ark" not in {record.tool_name for record in records}
+
+
 def test_tool_name_keeps_internal_dot_endpoint_distinct():
     assert make_tool_name("napcat", ".ocr_image") == "napcat_dot_ocr_image"
     assert make_tool_name("napcat", "ocr_image") == "napcat_ocr_image"
@@ -645,7 +652,7 @@ def test_build_tool_registry_data_extracts_tool_discovery_metadata():
     records = build_tool_registry_data(NapCatFunctionToolsPlugin)
     by_name = {record.tool_name: record for record in records}
 
-    assert len(records) == 181
+    assert len(records) == 180
     assert by_name["napcat_send_group_msg"].endpoint == "send_group_msg"
     assert by_name["napcat_send_group_msg"].method_name == "napcat_send_group_msg_tool"
     assert "发送群消息" in by_name["napcat_send_group_msg"].capability

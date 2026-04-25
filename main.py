@@ -31,7 +31,7 @@ from napcat_fc.tool_registry import build_tool_registry_data
     "astrbot_plugin_napcat_fc",
     "Soulter / AstrBot contributors",
     "将 NapCat / OneBot / go-cqhttp API 注册为 AstrBot 函数工具。",
-    "1.15.12",
+    "1.15.13",
 )
 class NapCatFunctionToolsPlugin(Star):
     SEARCH_TOOL_NAME = "napcat_search_tools"
@@ -1631,7 +1631,7 @@ Returns:
         file: str = None,
         file_id: str = None,
     ):
-        """下载图片文件流
+        """下载图片文件流，适合按 file_id、URL 或路径获取图片二进制流、图片缓存和后续转发素材
 
 Args:
     chunk_size(int): 可选，分块大小 (字节)。
@@ -1658,7 +1658,7 @@ Returns:
         file_id: str = None,
         out_format: str = None,
     ):
-        """下载语音文件流
+        """下载语音文件流，适合获取语音、录音、音频文件的二进制流或临时缓存素材
 
 Args:
     chunk_size(int): 可选，分块大小 (字节)。
@@ -1687,7 +1687,7 @@ Returns:
         file: str = None,
         file_id: str = None,
     ):
-        """以流式方式从网络或本地下载文件
+        """以流式方式下载网络或本地文件，适合大文件、临时文件、图片、语音和附件流式获取
 
 Args:
     chunk_size(int): 可选，分块大小 (字节)。
@@ -1711,7 +1711,7 @@ Returns:
         event: AstrMessageEvent,
         fileset_id: str,
     ):
-        """下载文件集
+        """下载文件集，适合批量获取闪传或文件集合中的多个文件、附件包和资源集合
 
 Args:
     fileset_id(str): 必填，文件集 ID。
@@ -1729,7 +1729,7 @@ Returns:
         event: AstrMessageEvent,
         count: int,
     ):
-        """获取收藏表情
+        """获取账号收藏表情列表，适合查询自定义表情、收藏表情包和可发送表情资源
 
 Args:
     count(int): 必填，获取数量。
@@ -1751,7 +1751,7 @@ Returns:
         emojiType: str,
         message_id: int = None,
     ):
-        """获取表情点赞详情
+        """获取单个表情点赞详情，适合查看某条消息表情回应、点赞用户和 Emoji 互动信息
 
 Args:
     cookie(str): 必填，分页Cookie。
@@ -1782,7 +1782,7 @@ Returns:
         user_id: int = None,
         group_id: int = None,
     ):
-        """消息转发到私聊
+        """将指定消息转发到私聊好友，适合把群消息、历史消息或当前会话消息单独转发给用户
 
 Args:
     message_id(int): 可选，消息ID。默认优先使用被回复消息 ID；未回复或解析失败时使用当前消息 ID。
@@ -1806,7 +1806,7 @@ Returns:
         message_id: int = None,
         user_id: int = None,
     ):
-        """消息转发到群
+        """将指定消息转发到群聊，适合把私聊消息、历史消息或当前会话消息转发到指定群
 
 Args:
     group_id(int): 可选，目标群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
@@ -1830,7 +1830,7 @@ Returns:
         group_id: int = None,
         target_id: int = None,
     ):
-        """在群聊或私聊中发送戳一戳动作
+        """在私聊或群聊中发送戳一戳，适合提醒用户、轻互动、拍一拍和 poke 动作
 
 Args:
     user_id(int): 可选，要戳的 QQ 号。默认使用当前消息发送者的用户 ID。
@@ -1856,7 +1856,7 @@ Returns:
         chat_type: str,
         group_id: int = None,
     ):
-        """获取群聊中的AI角色列表
+        """获取群聊可用 AI 角色列表，适合查询群语音角色、AI 声线和可用角色 ID
 
 Args:
     chat_type(str): 必填，1 or 2?。
@@ -1878,7 +1878,7 @@ Returns:
         text: str,
         group_id: int = None,
     ):
-        """通过 AI 语音引擎获取指定文本的语音 URL
+        """把文本转换为 AI 角色语音并获取语音 URL，适合生成群 AI 语音、TTS 和角色配音
 
 Args:
     character(str): 必填，character_id。
@@ -1900,7 +1900,7 @@ Returns:
         self,
         event: AstrMessageEvent,
     ):
-        """获取当前登录帐号的ClientKey
+        """获取当前登录账号 ClientKey，适合调用 QQ Web 接口、鉴权接口和需要客户端密钥的能力
 
 Args:
     无接口参数。
@@ -1917,7 +1917,7 @@ Returns:
         category: str,
         count: int,
     ):
-        """获取收藏列表
+        """获取 QQ 收藏列表，适合查询收藏文本、图片、语音、文件和历史收藏内容
 
 Args:
     category(str): 必填，分类ID。
@@ -1938,7 +1938,7 @@ Returns:
         event: AstrMessageEvent,
         domain: str,
     ):
-        """获取指定域名的 Cookies
+        """获取指定域名 Cookies，适合访问 QQ 相关 Web 服务、登录态接口和需要 Cookie 的请求
 
 Args:
     domain(str): 必填，需要获取 cookies 的域名 默认值: 空。
@@ -1956,7 +1956,7 @@ Returns:
         event: AstrMessageEvent,
         domain: str,
     ):
-        """获取 QQ 相关接口凭证
+        """获取 QQ 接口凭证，适合一次性取得 cookies、csrf token、clientkey 等鉴权信息
 
 Args:
     domain(str): 必填，需要获取 cookies 的域名 默认值: 空。
@@ -1973,7 +1973,7 @@ Returns:
         self,
         event: AstrMessageEvent,
     ):
-        """获取 CSRF Token
+        """获取 CSRF Token，适合调用需要 bkn、gtk 或防跨站令牌的 QQ Web 接口
 
 Args:
     无接口参数。
@@ -1989,7 +1989,7 @@ Returns:
         event: AstrMessageEvent,
         count: int,
     ):
-        """获取系统的可疑好友申请列表
+        """获取可疑好友申请列表，适合查看风控拦截、异常好友请求和待处理加好友通知
 
 Args:
     count(int): 必填，获取数量。
@@ -2011,7 +2011,7 @@ Returns:
         group_id: int = None,
         emoji_type: int = None,
     ):
-        """获取消息表情点赞列表
+        """获取消息表情点赞列表，适合查询某条消息收到的 Emoji 回应、点赞统计和互动用户
 
 Args:
     count(int): 必填，数量，0代表全部。
@@ -2040,7 +2040,7 @@ Returns:
         event: AstrMessageEvent,
         group_id: int = None,
     ):
-        """获取指定群聊中的精华消息列表
+        """获取群精华消息列表，适合查看群内已设精华的消息、重要内容和精华记录
 
 Args:
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
@@ -2058,7 +2058,7 @@ Returns:
         file: str = None,
         file_id: str = None,
     ):
-        """获取指定文件的详细信息及下载路径
+        """获取文件详情和下载路径，适合根据 file_id 查询文件名、大小、URL 和本地缓存位置
 
 Args:
     file(str): 可选，文件路径、URL或Base64。
@@ -2079,7 +2079,7 @@ Returns:
         event: AstrMessageEvent,
         share_code: str,
     ):
-        """获取文件集 ID
+        """获取文件集 ID，适合根据文件、闪传任务或资源集合定位 fileset 标识
 
 Args:
     share_code(str): 必填，分享码或分享链接。
@@ -2097,7 +2097,7 @@ Returns:
         event: AstrMessageEvent,
         fileset_id: str,
     ):
-        """获取文件集信息
+        """获取文件集信息，适合查询文件集合元数据、文件数量、资源状态和下载准备信息
 
 Args:
     fileset_id(str): 必填，文件集 ID。
@@ -2115,7 +2115,7 @@ Returns:
         event: AstrMessageEvent,
         fileset_id: str,
     ):
-        """获取闪传文件列表
+        """获取闪传文件列表，适合查看快速传输任务中的文件、附件集合和可下载资源
 
 Args:
     fileset_id(str): 必填，文件集 ID。
@@ -2135,7 +2135,7 @@ Returns:
         file_index: int = None,
         file_name: str = None,
     ):
-        """获取闪传文件链接
+        """获取闪传文件下载链接，适合根据闪传文件 ID 取得 URL、下载地址或临时访问链接
 
 Args:
     fileset_id(str): 必填，文件集 ID。
@@ -2160,7 +2160,7 @@ Returns:
         message_id: int = None,
         id: str = None,
     ):
-        """获取合并转发消息的具体内容
+        """获取合并转发消息内容，适合展开聊天记录、转发节点、合并消息和转发详情
 
 Args:
     message_id(int): 可选，消息ID。默认优先使用被回复消息 ID；未回复或解析失败时使用当前消息 ID。
@@ -2180,7 +2180,7 @@ Returns:
         event: AstrMessageEvent,
         no_cache: bool,
     ):
-        """获取当前帐号的好友列表
+        """获取当前账号好友列表，适合查询 QQ 好友、联系人、用户 ID 和好友昵称备注
 
 Args:
     no_cache(bool): 必填，是否不使用缓存。
@@ -2205,7 +2205,7 @@ Returns:
         user_id: int = None,
         message_seq: int = None,
     ):
-        """获取指定好友的历史聊天记录
+        """获取指定好友历史聊天记录，适合查询私聊消息、上下文记录和近期会话内容
 
 Args:
     count(int): 必填，获取消息数量。
@@ -2242,7 +2242,7 @@ Returns:
         self,
         event: AstrMessageEvent,
     ):
-        """获取好友分组列表
+        """获取好友分组和分组内好友列表，适合查询联系人分类、好友类别和分组成员
 
 Args:
     无接口参数。
@@ -2260,7 +2260,7 @@ Returns:
         attach_info: str,
         group_id: int = None,
     ):
-        """获取群相册列表
+        """获取群相册媒体列表，适合查询群相册图片、视频、相册资源和上传前选择相册
 
 Args:
     album_id(str): 必填，相册ID。
@@ -2283,7 +2283,7 @@ Returns:
         event: AstrMessageEvent,
         group_id: int = None,
     ):
-        """获取群 @全体成员 剩余次数
+        """获取群 @全体成员 剩余次数，适合发送全体提醒前检查额度、次数和权限限制
 
 Args:
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
@@ -2300,7 +2300,7 @@ Returns:
         event: AstrMessageEvent,
         group_id: int = None,
     ):
-        """获取群聊的详细信息，包括成员数、最大成员数等
+        """获取群详细资料，适合查询群人数、最大人数、群名称、群资料和扩展统计信息
 
 Args:
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
@@ -2317,7 +2317,7 @@ Returns:
         event: AstrMessageEvent,
         group_id: int = None,
     ):
-        """获取群聊文件系统的空间及状态信息
+        """获取群文件系统空间状态，适合查询群文件容量、已用空间、文件数量和存储限制
 
 Args:
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
@@ -2336,7 +2336,7 @@ Returns:
         group_id: int = None,
         busid: int = None,
     ):
-        """获取指定群文件的下载链接
+        """获取群文件下载链接，适合根据群文件 ID、busid 或路径下载群共享文件
 
 Args:
     file_id(str): 必填，文件ID 参考 `File` 对象。
@@ -2362,7 +2362,7 @@ Returns:
         folder: str = None,
         folder_id: str = None,
     ):
-        """获取群子目录文件列表
+        """获取群文件夹内文件列表，适合浏览群文件子目录、文件夹内容和共享资料目录
 
 Args:
     file_count(int): 必填，一次性获取的文件数量。
@@ -2389,7 +2389,7 @@ Returns:
         type: str,
         group_id: int = None,
     ):
-        """获取群荣誉信息。
+        """获取群荣誉信息，适合查询龙王、群聊之火、快乐源泉、活跃成员和群荣誉榜
 
 Args:
     type(str): 可选，荣誉类型，可选 all、talkative、performer、legend、strong_newbie、emotion。
@@ -2407,7 +2407,7 @@ Returns:
         self,
         event: AstrMessageEvent,
     ):
-        """获取群被忽略的加群请求
+        """获取被忽略的加群请求，适合查看群申请拦截、已忽略入群请求和待复查通知
 
 Args:
     无接口参数。
@@ -2422,7 +2422,7 @@ Returns:
         self,
         event: AstrMessageEvent,
     ):
-        """获取被忽略的入群申请和邀请通知
+        """获取被忽略的群通知，适合查看入群申请、群邀请、系统通知和忽略记录
 
 Args:
     无接口参数。
@@ -2439,7 +2439,7 @@ Returns:
         group_id: int = None,
         no_cache: bool = None,
     ):
-        """获取群聊的基本信息
+        """获取群基本信息，适合查询群号、群名称、成员数量和当前会话群资料
 
 Args:
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
@@ -2459,7 +2459,7 @@ Returns:
         event: AstrMessageEvent,
         group_id: int = None,
     ):
-        """获取群信息ex
+        """获取群扩展信息，适合查询群详细资料、等级、人数、头像、标签和额外群属性
 
 Args:
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
@@ -2476,7 +2476,7 @@ Returns:
         event: AstrMessageEvent,
         no_cache: bool,
     ):
-        """获取当前帐号的群聊列表
+        """获取当前账号群聊列表，适合查询已加入群、群号、群名称和群会话清单
 
 Args:
     no_cache(bool): 必填，是否不使用缓存（使用缓存可能更新不及时, 但响应更快） 默认值: `false`。
@@ -2496,7 +2496,7 @@ Returns:
         group_id: int = None,
         user_id: int = None,
     ):
-        """获取群聊中指定成员的信息
+        """获取群成员信息，适合查询指定成员昵称、群名片、角色、禁言状态和入群时间
 
 Args:
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
@@ -2519,7 +2519,7 @@ Returns:
         group_id: int = None,
         no_cache: bool = None,
     ):
-        """获取群聊中的所有成员列表
+        """获取群成员列表，适合枚举群内成员、管理员、群主、群名片和成员基础资料
 
 Args:
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
@@ -2546,7 +2546,7 @@ Returns:
         group_id: int = None,
         message_seq: int = None,
     ):
-        """获取指定群聊的历史聊天记录
+        """获取群历史聊天记录，适合查询群消息上下文、近期记录和指定 message_seq 附近消息
 
 Args:
     count(int): 必填，获取消息数量。
@@ -2584,7 +2584,7 @@ Returns:
         event: AstrMessageEvent,
         group_id: int = None,
     ):
-        """_获取群公告
+        """获取群公告列表，适合查看群通知、公告内容、发布者和历史公告记录
 
 Args:
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
@@ -2602,7 +2602,7 @@ Returns:
         file_count: int,
         group_id: int = None,
     ):
-        """获取群文件根目录下的所有文件和文件夹
+        """获取群文件根目录列表，适合浏览群文件首页、顶层文件夹和共享文件入口
 
 Args:
     file_count(int): 必填，文件数量。
@@ -2622,7 +2622,7 @@ Returns:
         event: AstrMessageEvent,
         group_id: int = None,
     ):
-        """获取群禁言列表
+        """获取群禁言列表，适合查询被禁言成员、禁言剩余时间和群管控状态
 
 Args:
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
@@ -2639,7 +2639,7 @@ Returns:
         event: AstrMessageEvent,
         count: int,
     ):
-        """获取群系统消息
+        """获取群系统消息，适合查看加群申请、邀请通知、管理事件和待处理群通知
 
 Args:
     count(int): 必填，获取的消息数量。
@@ -2658,7 +2658,7 @@ Returns:
         guild_id: str = None,
         no_cache: bool = None,
     ):
-        """获取子频道列表
+        """获取频道子频道列表，适合查询频道服务器下的文字频道、语音频道和频道 ID
 
 Args:
     guild_id(str): 可选，频道ID。
@@ -2678,7 +2678,7 @@ Returns:
         self,
         event: AstrMessageEvent,
     ):
-        """get_guild_list
+        """获取频道列表，适合查询当前账号加入的频道、频道服务器和 guild ID
 
 Args:
     无接口参数。
@@ -2695,7 +2695,7 @@ Returns:
         guild_id: str = None,
         next_token: str = None,
     ):
-        """获取频道成员列表
+        """获取频道成员列表，适合枚举频道用户、成员昵称、角色和频道内身份信息
 
 Args:
     guild_id(str): 可选，频道ID。

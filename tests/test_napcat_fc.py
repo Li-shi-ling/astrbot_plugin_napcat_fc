@@ -693,7 +693,7 @@ def test_tool_capability_prompts_are_concise_for_llm_discovery():
         assert "|" not in record.capability
 
 
-def test_todo_tracks_all_tools_and_first_batch_prompt_progress():
+def test_todo_tracks_all_tools_and_prompt_progress():
     records = build_tool_registry_data(NapCatFunctionToolsPlugin)
     todo_text = (Path(__file__).resolve().parents[1] / "TODO.md").read_text(
         encoding="utf-8"
@@ -701,11 +701,15 @@ def test_todo_tracks_all_tools_and_first_batch_prompt_progress():
 
     assert todo_text.count("- [") == len(records)
     assert "- [x] 001. `napcat_arksharegroup`" in todo_text
-    assert "- [x] 030. `napcat_download_file`" in todo_text
-    assert "- [ ] 031. `napcat_download_file_image_stream`" in todo_text
+    assert "- [x] 080. `napcat_get_guild_member_list`" in todo_text
+    assert "- [ ] 081. `napcat_get_guild_member_profile`" in todo_text
+    gitignore_lines = (Path(__file__).resolve().parents[1] / ".gitignore").read_text(
+        encoding="utf-8"
+    ).splitlines()
+    assert "TODO.md" not in gitignore_lines
 
 
-def test_first_batch_tool_prompts_include_searchable_context():
+def test_optimized_tool_prompts_include_searchable_context():
     records = build_tool_registry_data(NapCatFunctionToolsPlugin)
     by_name = {record.tool_name: record for record in records}
 
@@ -716,6 +720,14 @@ def test_first_batch_tool_prompts_include_searchable_context():
     assert "内联键盘" in by_name["napcat_click_inline_keyboard_button"].capability
     assert "关键词提取" in by_name["napcat_dot_get_word_slices"].capability
     assert "OCR" in by_name["napcat_dot_ocr_image"].capability
+    assert "二进制流" in by_name["napcat_download_file_image_stream"].capability
+    assert "自定义表情" in by_name["napcat_fetch_custom_face"].capability
+    assert "转发到私聊好友" in by_name["napcat_forward_friend_single_msg"].capability
+    assert "AI 声线" in by_name["napcat_get_ai_characters"].capability
+    assert "鉴权信息" in by_name["napcat_get_credentials"].capability
+    assert "群相册图片" in by_name["napcat_get_group_album_media_list"].capability
+    assert "群文件容量" in by_name["napcat_get_group_file_system_info"].capability
+    assert "频道服务器" in by_name["napcat_get_guild_list"].capability
 
 
 def test_ark_share_tools_describe_auto_send_targets():

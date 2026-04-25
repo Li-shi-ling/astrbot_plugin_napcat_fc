@@ -5,6 +5,7 @@ import re
 import subprocess
 import sys
 import asyncio
+import inspect
 import uuid
 from pathlib import Path
 from types import SimpleNamespace
@@ -667,6 +668,32 @@ def test_build_tool_registry_data_extracts_tool_discovery_metadata():
     ]
     assert json.loads(by_name["napcat_dot_ocr_image"].platforms_json) == ["windows"]
     assert json.loads(by_name["napcat_get_login_info"].platforms_json) == []
+
+
+def test_ark_share_tools_describe_card_sending_flow():
+    records = build_tool_registry_data(NapCatFunctionToolsPlugin)
+    by_name = {record.tool_name: record for record in records}
+
+    ark_tool_names = {
+        "napcat_send_group_ark_share",
+        "napcat_send_ark_share",
+        "napcat_arksharegroup",
+        "napcat_arksharepeer",
+    }
+    for tool_name in ark_tool_names:
+        assert "Ark" in by_name[tool_name].capability
+        assert "data" in by_name[tool_name].capability
+
+    group_doc = inspect.getdoc(NapCatFunctionToolsPlugin.napcat_send_group_ark_share_tool)
+    arksharegroup_doc = inspect.getdoc(NapCatFunctionToolsPlugin.napcat_arksharegroup_tool)
+    peer_doc = inspect.getdoc(NapCatFunctionToolsPlugin.napcat_send_ark_share_tool)
+
+    assert "napcat_send_group_msg(group_id=群号" in group_doc
+    assert '"type":"json"' in group_doc
+    assert "napcat_send_group_msg(group_id=群号" in arksharegroup_doc
+    assert "napcat_send_private_msg(user_id=QQ号" in arksharegroup_doc
+    assert "取返回 JSON 的 data 字段" in peer_doc
+    assert "napcat_send_private_msg(user_id=QQ号" in peer_doc
 
 
 @pytest.mark.asyncio

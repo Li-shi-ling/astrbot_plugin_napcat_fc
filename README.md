@@ -14,6 +14,7 @@
 - 仅系统专属工具名记录在插件类属性 `WINDOWS_TOOL_NAMES`、`LINUX_TOOL_NAMES`、`MAC_TOOL_NAMES` 中；当前只有 OCR 工具属于 Windows 专属。
 - 信息获取类接口会通过函数 `return` 把 NapCat API 响应返回给 LLM，不直接向当前聊天发送消息。
 - 当前 NapCat 版本中 `/translate_en2zh` 存在问题，老版本 NapCat 中 `/get_mini_app_ark` 不兼容；`napcat_translate_en2zh` 和 `napcat_get_mini_app_ark` 已临时禁用，不会进入工具搜索、动态发现或请求注入。
+- Ark 分享类接口（`napcat_send_group_ark_share`、`napcat_send_ark_share`、`napcat_arksharegroup`、`napcat_arksharepeer`）只负责获取卡片 JSON 内容。发送卡片时应先拿返回 JSON 的 `data` 字段，再按目标会话选择消息发送工具：群聊调用 `napcat_send_group_msg(group_id=群号, message=[{"type":"json","data":{"data": data字段}}])`，私聊调用 `napcat_send_private_msg(user_id=QQ号, message=[{"type":"json","data":{"data": data字段}}])`。
 
 ## 会话默认参数
 

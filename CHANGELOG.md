@@ -1,5 +1,15 @@
 ﻿# 更新日志
 
+## v1.15.4 - 2026-04-25
+
+- 调整 Ark 分享类工具提示，说明发送卡片需要按目标会话选择群聊或私聊消息发送工具。
+- 补充私聊卡片发送示例：`napcat_send_private_msg(user_id=QQ号, message=[{"type":"json","data":{"data": data字段}}])`。
+
+## v1.15.3 - 2026-04-25
+
+- 优化 `napcat_send_group_ark_share`、`napcat_send_ark_share`、`napcat_arksharegroup` 和 `napcat_arksharepeer` 的工具提示。
+- 明确 Ark 分享接口只返回卡片 JSON，发送卡片需要先取返回 JSON 的 `data` 字段，再通过消息发送工具发送 `json` 消息段。
+
 ## v1.15.2 - 2026-04-25
 
 - 临时禁用 `napcat_get_mini_app_ark` 工具注册，避免老版本 NapCat 不兼容 `/get_mini_app_ark` 接口。

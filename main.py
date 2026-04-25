@@ -31,7 +31,7 @@ from napcat_fc.tool_registry import build_tool_registry_data
     "astrbot_plugin_napcat_fc",
     "Soulter / AstrBot contributors",
     "将 NapCat / OneBot / go-cqhttp API 注册为 AstrBot 函数工具。",
-    "1.15.2",
+    "1.15.4",
 )
 class NapCatFunctionToolsPlugin(Star):
     SEARCH_TOOL_NAME = "napcat_search_tools"
@@ -740,13 +740,13 @@ class NapCatFunctionToolsPlugin(Star):
         event: AstrMessageEvent,
         group_id: int = None,
     ):
-        """能力: 获取群分享的 Ark 内容 (API: /ArkShareGroup).
+        """能力: 获取群分享 Ark 卡片 JSON；拿返回 JSON 的 data 字段后，按目标会话用消息工具发送 json 段 (API: /ArkShareGroup).
 
 Args:
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
 
 Returns:
-    str: 返回 API 响应的 JSON 字符串。"""
+    str: 返回 API 响应的 JSON 字符串。发送卡片时先取返回 JSON 的 data 字段，再按目标会话选择发送工具：群聊调用 napcat_send_group_msg(group_id=群号, message=[{"type":"json","data":{"data": data字段}}])，私聊调用 napcat_send_private_msg(user_id=QQ号, message=[{"type":"json","data":{"data": data字段}}])。"""
         payload: dict = {}
         payload['group_id'] = group_id
         return await self._call_napcat_api(event, 'ArkShareGroup', payload)
@@ -760,7 +760,7 @@ Returns:
         user_id: int = None,
         phoneNumber: str = None,
     ):
-        """能力: 获取用户推荐的 Ark 内容 (API: /ArkSharePeer).
+        """能力: 获取用户推荐 Ark 卡片 JSON；拿返回 JSON 的 data 字段后，用私聊或群聊 json 段发送 (API: /ArkSharePeer).
 
 Args:
     phone_number(str): 必填，手机号。
@@ -769,7 +769,7 @@ Args:
     user_id(int): 可选，和user_id二选一。
 
 Returns:
-    str: 返回 API 响应的 JSON 字符串。"""
+    str: 返回 API 响应的 JSON 字符串。发送卡片时先取返回 JSON 的 data 字段，再调用对应消息发送工具并传入 message=[{"type":"json","data":{"data": data字段}}]。群聊用 napcat_send_group_msg，私聊用 napcat_send_private_msg。"""
         payload: dict = {}
         if phone_number is not None:
             payload['phone_number'] = phone_number
@@ -3314,7 +3314,7 @@ Returns:
         group_id: int = None,
         user_id: int = None,
     ):
-        """能力: 获取用户推荐的 Ark 内容 (API: /send_ark_share).
+        """能力: 获取用户推荐 Ark 卡片 JSON；拿返回 JSON 的 data 字段后，用私聊或群聊 json 段发送 (API: /send_ark_share).
 
 Args:
     phone_number(str): 必填，手机号。
@@ -3322,7 +3322,7 @@ Args:
     user_id(int): 可选，QQ号。
 
 Returns:
-    str: 返回 API 响应的 JSON 字符串。"""
+    str: 返回 API 响应的 JSON 字符串。该接口只生成 Ark 卡片内容，不代表已经发出卡片；发送时取返回 JSON 的 data 字段，再按目标会话选择发送工具：群聊调用 napcat_send_group_msg(group_id=群号, message=[{"type":"json","data":{"data": data字段}}])，私聊调用 napcat_send_private_msg(user_id=QQ号, message=[{"type":"json","data":{"data": data字段}}])。"""
         payload: dict = {}
         if phone_number is not None:
             payload['phone_number'] = phone_number
@@ -3447,13 +3447,13 @@ Returns:
         event: AstrMessageEvent,
         group_id: int = None,
     ):
-        """能力: 获取群分享的 Ark 内容 (API: /send_group_ark_share).
+        """能力: 获取群分享 Ark 卡片 JSON；拿返回 JSON 的 data 字段后，用 napcat_send_group_msg 发送 json 段 (API: /send_group_ark_share).
 
 Args:
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
 
 Returns:
-    str: 返回 API 响应的 JSON 字符串。"""
+    str: 返回 API 响应的 JSON 字符串。发送群卡片的正确流程：先调用 napcat_send_group_ark_share(group_id=群号)，拿返回 JSON 的 data 字段；再调用 napcat_send_group_msg(group_id=群号, message=[{"type":"json","data":{"data": data字段}}])。"""
         payload: dict = {}
         payload['group_id'] = group_id
         return await self._call_napcat_api(event, 'send_group_ark_share', payload)

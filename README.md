@@ -10,7 +10,7 @@
 - 复用 AstrBot 默认接入 NapCat 的 `AiocqhttpMessageEvent` 和当前事件的 `event.bot.api.call_action`，不自建 HTTP 客户端。
 - 初始化时创建工具管理数据库 `napcat_fc_tools.db`，记录工具名、API、能力、参数、平台限制和启用状态，供动态工具发现使用。
 - NapCat 工具默认不作为全局 active 工具常驻暴露，而是在 `on_llm_request(priority=-100)` 阶段按搜索发现结果和数据库状态注入到当前请求。
-- `napcat_search_tools` 搜索工具会一直注入到 aiocqhttp/NapCat 请求中。当当前可用工具列表里没有明确可以完成用户目标的 NapCat 工具时，应先调用它进行工具发现。它支持空格分词并发搜索，先合并综合相关度最高的一批候选，再排除已发现工具，将剩余最相关的前 3 个工具加入持久化发现队列，并立即注入当前请求后续工具调用。
+- `napcat_search_tools` 搜索工具会一直注入到 aiocqhttp/NapCat 请求中。当当前可用工具列表里没有明确可以完成用户目标的 NapCat 工具时，应先调用它进行工具发现。它支持空格分词并发搜索，先合并综合相关度最高的一批候选，再排除已发现工具，将剩余最相关的一批工具加入持久化发现队列，并立即注入当前请求后续工具调用。可通过 `result_limit` 控制本次加入工具列表的数量，默认 `3`；如果需要更广泛的工具集合，可以多次用同一个关键词搜索，已发现工具会被跳过，后续搜索会继续补充新候选。
 - 仅系统专属工具名记录在插件类属性 `WINDOWS_TOOL_NAMES`、`LINUX_TOOL_NAMES`、`MAC_TOOL_NAMES` 中；当前只有 OCR 工具属于 Windows 专属。
 - 信息获取类接口会通过函数 `return` 把 NapCat API 响应返回给 LLM，不直接向当前聊天发送消息。
 - 当前 NapCat 版本中 `/translate_en2zh` 存在问题，老版本 NapCat 中 `/get_mini_app_ark` 不兼容；`napcat_translate_en2zh` 和 `napcat_get_mini_app_ark` 已临时禁用，不会进入工具搜索、动态发现或请求注入。

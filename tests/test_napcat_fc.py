@@ -933,6 +933,15 @@ def test_discovered_tool_limit_uses_config_with_default_and_minimum():
     assert plugin._get_discovered_tool_limit() == 20
 
 
+def test_search_result_limit_uses_argument_with_default_and_minimum():
+    plugin = NapCatFunctionToolsPlugin(context=FakeContext([]))
+    assert plugin._get_search_result_limit() == 3
+    assert plugin._get_search_result_limit(6) == 6
+    assert plugin._get_search_result_limit("4") == 4
+    assert plugin._get_search_result_limit(0) == 1
+    assert plugin._get_search_result_limit("invalid") == 3
+
+
 @pytest.mark.asyncio
 async def test_on_llm_request_injects_discovered_tools_as_request_scope_copies():
     source_tool = make_function_tool("napcat_send_group_msg", active=False)
@@ -1027,9 +1036,12 @@ async def test_search_tool_discovers_persists_and_immediately_injects_tools():
         assert "群管理" in search_tool.description
         assert "当前可用工具列表中没有明确可以完成用户目标" in search_tool.description
         assert "必须先调用本工具进行工具发现" in search_tool.description
+        assert "result_limit" in search_tool.description
+        assert "多次用同一个关键词搜索" in search_tool.description
         result = await search_tool.handler(make_aiocqhttp_event(), keyword="群")
         payload = json.loads(result)
 
+        assert payload["result_limit"] == 3
         assert 1 <= len(payload["matched_tools"]) <= 3
         assert payload["injected_count"] >= 1
         assert req.func_tool.get_tool("napcat_send_group_msg") is not None
@@ -1079,15 +1091,20 @@ async def test_search_tool_splits_terms_and_skips_already_discovered_candidates(
         await plugin.inject_napcat_tools_on_llm_request(make_aiocqhttp_event(), req)
 
         search_tool = req.func_tool.get_tool(plugin.SEARCH_TOOL_NAME)
-        result = await search_tool.handler(make_aiocqhttp_event(), keyword="group info")
+        result = await search_tool.handler(
+            make_aiocqhttp_event(),
+            keyword="group info",
+            result_limit=2,
+        )
         payload = json.loads(result)
         matched_names = [tool["name"] for tool in payload["matched_tools"]]
 
         assert payload["search_terms"] == ["group", "info"]
         assert payload["candidate_limit"] == 4
+        assert payload["result_limit"] == 2
         assert "napcat_get_group_info" in payload["skipped_discovered_tools"]
         assert "napcat_get_group_info" not in matched_names
-        assert 1 <= len(matched_names) <= 3
+        assert 1 <= len(matched_names) <= 2
         assert all(req.func_tool.get_tool(tool_name) is not None for tool_name in matched_names)
         assert (
             await plugin.tool_registry_repo.list_discovered_tool_names()

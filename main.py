@@ -31,7 +31,7 @@ from napcat_fc.tool_registry import build_tool_registry_data
     "astrbot_plugin_napcat_fc",
     "Soulter / AstrBot contributors",
     "将 NapCat / OneBot / go-cqhttp API 注册为 AstrBot 函数工具。",
-    "1.15.9",
+    "1.15.10",
 )
 class NapCatFunctionToolsPlugin(Star):
     SEARCH_TOOL_NAME = "napcat_search_tools"
@@ -183,6 +183,7 @@ class NapCatFunctionToolsPlugin(Star):
         async def search_handler(
             event: AstrMessageEvent,
             keyword: str,
+            result_limit: int = None,
         ) -> str:
             """按关键词搜索 NapCat 工具，并立即注入本轮请求。"""
             if not self._is_aiocqhttp_event(event):
@@ -199,6 +200,7 @@ class NapCatFunctionToolsPlugin(Star):
             )
             search_terms = self._build_search_terms(keyword)
             candidate_limit = self._get_search_candidate_limit()
+            result_limit_value = self._get_search_result_limit(result_limit)
             candidate_records = await self._search_tool_candidates(
                 keyword,
                 search_terms,
@@ -221,7 +223,7 @@ class NapCatFunctionToolsPlugin(Star):
                 record
                 for record in platform_records
                 if record.tool_name not in discovered_names
-            ][: self.SEARCH_RESULT_LIMIT]
+            ][:result_limit_value]
             matched_names = [record.tool_name for record in records]
             self._debug_log(
                 "search_tool:matched",
@@ -231,6 +233,7 @@ class NapCatFunctionToolsPlugin(Star):
                 candidate_count=len(candidate_records),
                 platform_candidate_count=len(platform_records),
                 skipped_discovered_count=len(skipped_discovered_names),
+                result_limit=result_limit_value,
                 matched_count=len(matched_names),
                 matched_tools=matched_names,
             )
@@ -254,6 +257,7 @@ class NapCatFunctionToolsPlugin(Star):
                     "keyword": keyword,
                     "search_terms": search_terms,
                     "candidate_limit": candidate_limit,
+                    "result_limit": result_limit_value,
                     "matched_tools": [
                         {
                             "name": record.tool_name,
@@ -281,13 +285,24 @@ class NapCatFunctionToolsPlugin(Star):
                         "必填，搜索 NapCat 工具能力、工具名、API 名或参数名的关键词。"
                         "多个词用空格隔开时会并发分词搜索，并按综合相关度排序。"
                     ),
+                },
+                {
+                    "name": "result_limit",
+                    "type": "integer",
+                    "description": (
+                        "可选，本次最多加入持久化发现队列并注入当前请求的工具数量。"
+                        "默认 3，最小有效值为 1。"
+                    ),
                 }
             ],
             desc=(
                 "能力: 在 NapCat/OneBot/go-cqhttp 工具库中按关键词模糊搜索工具，"
                 "支持空格分词并发查询，会先取综合相关度最高的一批候选，"
-                "再排除已经发现过的工具，将剩余最相关的前 3 个工具加入持久化发现队列，"
+                "再排除已经发现过的工具，将剩余最相关的一批工具加入持久化发现队列，"
                 "并立即注入本轮请求。"
+                "可用 result_limit 控制本次加入工具列表的数量，默认 3。"
+                "如果一次搜索没有覆盖足够多工具，可以多次用同一个关键词搜索；"
+                "已发现工具会被跳过，后续搜索会继续补充更广泛的候选工具。"
                 "可搜索的能力大类包括: 消息发送与撤回、群消息和私聊消息、"
                 "合并转发和历史消息、群成员和群管理、好友和请求处理、"
                 "群文件和文件下载、图片/语音/OCR、表情和收藏、账号状态、"
@@ -319,6 +334,15 @@ class NapCatFunctionToolsPlugin(Star):
             limit = int(raw_limit)
         except (TypeError, ValueError):
             return self.SEARCH_CANDIDATE_LIMIT
+        return max(1, limit)
+
+    def _get_search_result_limit(self, result_limit=None) -> int:
+        if result_limit is None:
+            return self.SEARCH_RESULT_LIMIT
+        try:
+            limit = int(result_limit)
+        except (TypeError, ValueError):
+            return self.SEARCH_RESULT_LIMIT
         return max(1, limit)
 
     def _get_discovered_tool_limit(self) -> int:

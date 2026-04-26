@@ -15,6 +15,11 @@ class ToolRegistryData:
     endpoint: str
     method_name: str
     capability: str
+    namespace: str
+    aliases_json: str
+    risk_level: str
+    requires_confirmation: bool
+    default_discoverable: bool
     parameters_json: str
     required_parameters_json: str
     platforms_json: str
@@ -46,6 +51,11 @@ class ToolRegistryRepo:
                     existing.endpoint = tool.endpoint
                     existing.method_name = tool.method_name
                     existing.capability = tool.capability
+                    existing.namespace = tool.namespace
+                    existing.aliases_json = tool.aliases_json
+                    existing.risk_level = tool.risk_level
+                    existing.requires_confirmation = tool.requires_confirmation
+                    existing.default_discoverable = tool.default_discoverable
                     existing.parameters_json = tool.parameters_json
                     existing.required_parameters_json = tool.required_parameters_json
                     existing.platforms_json = tool.platforms_json
@@ -70,6 +80,11 @@ class ToolRegistryRepo:
                     existing.endpoint = tool.endpoint
                     existing.method_name = tool.method_name
                     existing.capability = tool.capability
+                    existing.namespace = tool.namespace
+                    existing.aliases_json = tool.aliases_json
+                    existing.risk_level = tool.risk_level
+                    existing.requires_confirmation = tool.requires_confirmation
+                    existing.default_discoverable = tool.default_discoverable
                     existing.parameters_json = tool.parameters_json
                     existing.required_parameters_json = tool.required_parameters_json
                     existing.platforms_json = tool.platforms_json
@@ -136,11 +151,14 @@ class ToolRegistryRepo:
                 func.lower(NapcatToolRecord.tool_name).like(pattern),
                 func.lower(NapcatToolRecord.endpoint).like(pattern),
                 func.lower(NapcatToolRecord.capability).like(pattern),
+                func.lower(NapcatToolRecord.namespace).like(pattern),
+                func.lower(NapcatToolRecord.aliases_json).like(pattern),
                 func.lower(NapcatToolRecord.parameters_json).like(pattern),
             )
         )
         if enabled_only:
             stmt = stmt.where(NapcatToolRecord.enabled.is_(True))
+        stmt = stmt.where(NapcatToolRecord.default_discoverable.is_(True))
 
         async with self.db.get_session() as session:
             result = await session.execute(stmt)
@@ -199,6 +217,11 @@ class ToolRegistryRepo:
             endpoint=tool.endpoint,
             method_name=tool.method_name,
             capability=tool.capability,
+            namespace=tool.namespace,
+            aliases_json=tool.aliases_json,
+            risk_level=tool.risk_level,
+            requires_confirmation=tool.requires_confirmation,
+            default_discoverable=tool.default_discoverable,
             parameters_json=tool.parameters_json,
             required_parameters_json=tool.required_parameters_json,
             platforms_json=tool.platforms_json,
@@ -214,14 +237,22 @@ class ToolRegistryRepo:
         tool_name = record.tool_name.lower()
         endpoint = record.endpoint.lower()
         capability = record.capability.lower()
+        namespace = getattr(record, "namespace", "").lower()
+        aliases = getattr(record, "aliases_json", "[]").lower()
         params = record.parameters_json.lower()
         if tool_name == keyword or endpoint == keyword:
             score += 100
+        if namespace == keyword:
+            score += 80
+        if keyword in aliases:
+            score += 45
         if tool_name.startswith(keyword) or endpoint.startswith(keyword):
             score += 50
         if keyword in tool_name:
             score += 30
         if keyword in endpoint:
+            score += 25
+        if keyword in namespace:
             score += 25
         if keyword in capability:
             score += 20

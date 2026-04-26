@@ -11,15 +11,27 @@ class NapcatToolRecord(SQLModel, table=True):
     __tablename__ = "napcat_tool"
     __table_args__ = {"extend_existing": True}
 
-    tool_name: str = Field(primary_key=True, index=True, description="工具名")
+    tool_name: str = Field(primary_key=True, index=True, description="tool name")
     endpoint: str = Field(index=True, description="NapCat/OneBot API")
-    method_name: str = Field(index=True, description="插件方法名")
-    capability: str = Field(default="", index=True, description="工具能力")
-    parameters_json: str = Field(default="[]", description="参数 JSON")
-    required_parameters_json: str = Field(default="[]", description="必填参数 JSON")
-    platforms_json: str = Field(default="[]", description="限定平台 JSON")
-    enabled: bool = Field(default=True, index=True, description="是否启用")
-    updated_at: datetime = Field(default_factory=datetime.now, description="更新时间")
+    method_name: str = Field(index=True, description="plugin method name")
+    capability: str = Field(default="", index=True, description="tool capability")
+    namespace: str = Field(default="", index=True, description="tool namespace")
+    aliases_json: str = Field(default="[]", description="search aliases JSON")
+    risk_level: str = Field(default="low", index=True, description="risk level")
+    requires_confirmation: bool = Field(
+        default=False,
+        description="whether confirmation is required",
+    )
+    default_discoverable: bool = Field(
+        default=True,
+        index=True,
+        description="whether discoverable by default",
+    )
+    parameters_json: str = Field(default="[]", description="parameters JSON")
+    required_parameters_json: str = Field(default="[]", description="required parameters JSON")
+    platforms_json: str = Field(default="[]", description="platforms JSON")
+    enabled: bool = Field(default=True, index=True, description="enabled")
+    updated_at: datetime = Field(default_factory=datetime.now, description="updated at")
 
 
 class NapcatDiscoveredToolRecord(SQLModel, table=True):
@@ -28,6 +40,6 @@ class NapcatDiscoveredToolRecord(SQLModel, table=True):
     __tablename__ = "napcat_discovered_tool"
     __table_args__ = {"extend_existing": True}
 
-    tool_name: str = Field(primary_key=True, index=True, description="工具名")
-    position: int = Field(index=True, description="队列位置")
-    updated_at: datetime = Field(default_factory=datetime.now, description="更新时间")
+    tool_name: str = Field(primary_key=True, index=True, description="tool name")
+    position: int = Field(index=True, description="queue position")
+    updated_at: datetime = Field(default_factory=datetime.now, description="updated at")

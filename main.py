@@ -31,7 +31,7 @@ from napcat_fc.tool_registry import build_tool_registry_data
     "astrbot_plugin_napcat_fc",
     "Soulter / AstrBot contributors",
     "将 NapCat / OneBot / go-cqhttp API 注册为 AstrBot 函数工具。",
-    "1.15.18",
+    "1.15.19",
 )
 class NapCatFunctionToolsPlugin(Star):
     SEARCH_TOOL_NAME = "napcat_search_tools"
@@ -284,6 +284,9 @@ class NapCatFunctionToolsPlugin(Star):
                             "name": record.tool_name,
                             "endpoint": record.endpoint,
                             "capability": record.capability,
+                            "namespace": record.namespace,
+                            "risk_level": record.risk_level,
+                            "requires_confirmation": record.requires_confirmation,
                         }
                         for record in records
                     ],
@@ -444,14 +447,22 @@ class NapCatFunctionToolsPlugin(Star):
         tool_name = record.tool_name.lower()
         endpoint = record.endpoint.lower()
         capability = record.capability.lower()
+        namespace = getattr(record, "namespace", "").lower()
+        aliases = getattr(record, "aliases_json", "[]").lower()
         params = record.parameters_json.lower()
         if tool_name == normalized or endpoint == normalized:
             score += 100
+        if namespace == normalized:
+            score += 80
+        if normalized in aliases:
+            score += 45
         if tool_name.startswith(normalized) or endpoint.startswith(normalized):
             score += 50
         if normalized in tool_name:
             score += 30
         if normalized in endpoint:
+            score += 25
+        if normalized in namespace:
             score += 25
         if normalized in capability:
             score += 20

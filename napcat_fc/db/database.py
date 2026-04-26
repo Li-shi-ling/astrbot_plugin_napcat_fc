@@ -56,6 +56,7 @@ class ToolDBManager:
                     raise
 
         async with self.engine.connect() as conn:
+            await self._ensure_table_columns(conn)
             await conn.execute(text("PRAGMA journal_mode=WAL"))
             await conn.execute(text("PRAGMA synchronous=NORMAL"))
             await conn.execute(text("PRAGMA cache_size=-20000"))
@@ -64,6 +65,41 @@ class ToolDBManager:
             await conn.commit()
 
         await self.validate_db()
+
+    async def _ensure_table_columns(self, conn):
+        from .tables import NapcatToolRecord
+
+        expected_columns = NapcatToolRecord.__table__.columns
+        result = await conn.execute(text('PRAGMA table_info("napcat_tool")'))
+        existing_columns = {str(row[1]) for row in result.fetchall() if len(row) > 1}
+        for column in expected_columns:
+            if column.name in existing_columns:
+                continue
+            await conn.execute(
+                text(
+                    f'ALTER TABLE "napcat_tool" ADD COLUMN '
+                    f'"{column.name}" {self._sqlite_column_definition(column)}'
+                )
+            )
+
+    def _sqlite_column_definition(self, column) -> str:
+        try:
+            python_type = column.type.python_type
+        except NotImplementedError:
+            python_type = str
+        if python_type is bool:
+            column_type = "BOOLEAN"
+            default_value = column.default.arg if column.default is not None else False
+            default = f" DEFAULT {1 if default_value is True else 0}"
+        else:
+            column_type = "VARCHAR"
+            default_value = column.default.arg if column.default is not None else None
+            if default_value is None:
+                default = " DEFAULT ''"
+            else:
+                escaped = str(default_value).replace("'", "''")
+                default = f" DEFAULT '{escaped}'"
+        return f"{column_type} NOT NULL{default}"
 
     async def validate_db(self):
         expected_tables = {

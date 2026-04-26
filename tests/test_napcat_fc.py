@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import sqlite3
 import subprocess
 import sys
 import asyncio
@@ -957,6 +958,158 @@ async def test_tool_registry_repo_roundtrip():
             "tool_c",
             "tool_d",
         ]
+    finally:
+        await db.close()
+        for suffix in ("", "-wal", "-shm"):
+            path = Path(str(db_path) + suffix)
+            if path.exists():
+                path.unlink()
+
+
+@pytest.mark.asyncio
+async def test_tool_registry_persists_search_metadata_fields():
+    records = [
+        record
+        for record in build_tool_registry_data(NapCatFunctionToolsPlugin)
+        if record.tool_name
+        in {
+            "napcat_send_msg",
+            "napcat_set_group_ban",
+            "napcat_get_version_info",
+        }
+    ]
+    db_path = (
+        Path(__file__).resolve().parents[1]
+        / f".test-tool-registry-metadata-{uuid.uuid4().hex}.db"
+    )
+    db = ToolDBManager(str(db_path))
+    repo = ToolRegistryRepo(db)
+
+    await db.init_db()
+    try:
+        assert await repo.replace_all_tools(records) == 3
+
+        send_msg = await repo.get_tool("napcat_send_msg")
+        assert send_msg is not None
+        assert send_msg.namespace == "message"
+        assert "群聊消息" in json.loads(send_msg.aliases_json)
+        assert send_msg.risk_level == "medium"
+        assert send_msg.requires_confirmation is False
+        assert send_msg.default_discoverable is True
+
+        group_ban = await repo.get_tool("napcat_set_group_ban")
+        assert group_ban is not None
+        assert group_ban.namespace == "group_member"
+        assert "禁言" in json.loads(group_ban.aliases_json)
+        assert group_ban.risk_level == "high"
+        assert group_ban.requires_confirmation is True
+
+        version = await repo.get_tool("napcat_get_version_info")
+        assert version is not None
+        assert version.namespace == "system"
+        assert version.risk_level == "low"
+    finally:
+        await db.close()
+        for suffix in ("", "-wal", "-shm"):
+            path = Path(str(db_path) + suffix)
+            if path.exists():
+                path.unlink()
+
+
+@pytest.mark.asyncio
+async def test_search_uses_namespace_and_aliases():
+    records = [
+        record
+        for record in build_tool_registry_data(NapCatFunctionToolsPlugin)
+        if record.tool_name
+        in {
+            "napcat_set_group_ban",
+            "napcat_get_group_shut_list",
+            "napcat_get_version_info",
+        }
+    ]
+    db_path = (
+        Path(__file__).resolve().parents[1]
+        / f".test-tool-registry-search-metadata-{uuid.uuid4().hex}.db"
+    )
+    db = ToolDBManager(str(db_path))
+    repo = ToolRegistryRepo(db)
+
+    await db.init_db()
+    try:
+        assert await repo.replace_all_tools(records) == 3
+
+        alias_results = await repo.search_tools("禁言", limit=5)
+        alias_names = [record.tool_name for record in alias_results]
+        assert "napcat_set_group_ban" in alias_names
+        assert "napcat_get_group_shut_list" in alias_names
+
+        namespace_results = await repo.search_tools("system", limit=1)
+        assert [record.tool_name for record in namespace_results] == [
+            "napcat_get_version_info"
+        ]
+
+        assert repo.search_score(alias_results[0], "禁言") > 0
+    finally:
+        await db.close()
+        for suffix in ("", "-wal", "-shm"):
+            path = Path(str(db_path) + suffix)
+            if path.exists():
+                path.unlink()
+
+
+@pytest.mark.asyncio
+async def test_tool_db_init_migrates_old_tool_table_metadata_columns():
+    db_path = (
+        Path(__file__).resolve().parents[1]
+        / f".test-tool-registry-migration-{uuid.uuid4().hex}.db"
+    )
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            """
+            CREATE TABLE napcat_tool (
+                tool_name VARCHAR NOT NULL PRIMARY KEY,
+                endpoint VARCHAR NOT NULL,
+                method_name VARCHAR NOT NULL,
+                capability VARCHAR NOT NULL DEFAULT '',
+                parameters_json VARCHAR NOT NULL DEFAULT '[]',
+                required_parameters_json VARCHAR NOT NULL DEFAULT '[]',
+                platforms_json VARCHAR NOT NULL DEFAULT '[]',
+                enabled BOOLEAN NOT NULL DEFAULT 1,
+                updated_at DATETIME NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE napcat_discovered_tool (
+                tool_name VARCHAR NOT NULL PRIMARY KEY,
+                position INTEGER NOT NULL,
+                updated_at DATETIME NOT NULL
+            )
+            """
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    db = ToolDBManager(str(db_path))
+    repo = ToolRegistryRepo(db)
+    records = [
+        record
+        for record in build_tool_registry_data(NapCatFunctionToolsPlugin)
+        if record.tool_name == "napcat_get_version_info"
+    ]
+    try:
+        await db.init_db()
+        assert await repo.replace_all_tools(records) == 1
+        migrated = await repo.get_tool("napcat_get_version_info")
+        assert migrated is not None
+        assert migrated.namespace == "system"
+        assert json.loads(migrated.aliases_json)
+        assert migrated.risk_level == "low"
+        assert migrated.default_discoverable is True
     finally:
         await db.close()
         for suffix in ("", "-wal", "-shm"):

@@ -721,6 +721,27 @@ def test_todo_tracks_all_tools_and_prompt_progress():
     assert "TODO.md" not in gitignore_lines
 
 
+def test_tool_discovery_report_and_constraint_are_maintained():
+    plugin_dir = Path(__file__).resolve().parents[1]
+    report_text = (plugin_dir / "report" / "tool_discovery_report.md").read_text(
+        encoding="utf-8"
+    )
+    constraints_text = (plugin_dir / "CONSTRAINTS.md").read_text(encoding="utf-8")
+    readme_text = (plugin_dir / "README.md").read_text(encoding="utf-8")
+
+    assert "工具发现逻辑报告书" in report_text
+    assert "napcat_search_tools" in report_text
+    assert "ToolRegistryRepo.search_tools" in report_text
+    assert "risk_level 当前只进入结果元数据，不参与搜索排序" in report_text
+    assert "report/tool_discovery_report.md" in constraints_text
+    assert "一旦改动工具发现相关模块或行为" in constraints_text
+    assert "report/tool_discovery_report.md" in readme_text
+    gitignore_lines = (plugin_dir / ".gitignore").read_text(
+        encoding="utf-8"
+    ).splitlines()
+    assert "CONSTRAINTS.md" not in gitignore_lines
+
+
 def test_optimized_tool_prompts_include_searchable_context():
     records = build_tool_registry_data(NapCatFunctionToolsPlugin)
     by_name = {record.tool_name: record for record in records}

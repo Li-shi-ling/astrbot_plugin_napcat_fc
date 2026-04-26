@@ -90,4 +90,4 @@ LLM 调用具体接口时使用对应工具，例如 `napcat_send_group_msg`：
 
 ## 开发约束
 
-本项目开发约束见 [CONSTRAINTS.md](CONSTRAINTS.md)。每次功能更新必须同步测试、更新日志、版本号和 README 对应说明。
+本项目开发约束见 [CONSTRAINTS.md](CONSTRAINTS.md)。每次功能更新必须同步测试、更新日志、版本号和 README 对应说明。工具发现逻辑的设计与维护记录见 [report/tool_discovery_report.md](report/tool_discovery_report.md)；凡是改动工具发现相关模块或行为，必须同步更新该报告。

@@ -39,6 +39,10 @@
 
 插件加载时会自动把当前插件目录加入 Python 模块搜索路径，确保 AstrBot 从项目根目录或插件管理器加载 `main.py` 时也能找到内部包 `napcat_fc`。
 
+插件热更新时会主动重新加载插件目录内的 `napcat_fc` 内部模块，避免 AstrBot 只刷新 `main.py` 而保留旧版数据库模型或工具注册逻辑，导致工具发现数据库迁移没有使用最新字段。
+
+如果启动时检测到工具发现数据库仍是旧版 `napcat_tool` 表结构，插件会输出警告并列出缺失字段，然后自动执行兼容迁移；已完成迁移的数据库不会重复告警。
+
 工具管理数据库位于 AstrBot 插件数据目录，表名为 `napcat_tool`。插件启动时会按当前 `main.py` 中的工具定义同步记录，保留已有 `enabled` 状态并移除已不存在的工具。外部工具发现逻辑可以读取 `enabled`、`namespace`、`aliases_json`、`risk_level`、`requires_confirmation`、`default_discoverable`、`parameters_json`、`required_parameters_json` 和 `platforms_json` 字段进行筛选。
 
 搜索发现队列持久化在 `napcat_discovered_tool` 表中，默认最多保存 20 个工具。重复搜索到同一工具时会去重并刷新到队尾；超过上限时按 FIFO 队列出队。搜索工具每次会先取 `search_candidate_limit` 个候选并跳过已发现工具，默认值为 10，避免高相关旧工具长期占住前三名。已发现工具会在后续请求直接注入，不需要再次做数据库搜索。
@@ -58,6 +62,8 @@
 系统专属工具会在搜索和注入阶段按当前运行系统过滤。例如 Windows 专属 OCR 工具只会在 Windows 环境中进入搜索发现队列并被注入。
 
 搜索综合评分兼容旧版工具数据库仓库对象；如果运行环境暂时只更新了 `main.py`，仍会回退到旧评分逻辑，避免搜索工具因为评分方法缺失而中断。
+
+搜索结果序列化同样兼容旧版工具记录对象；如果运行环境中的记录暂时缺少 `namespace`、`risk_level` 或 `requires_confirmation` 字段，会使用安全默认值返回，避免工具发现流程中断。
 
 ## 使用方式
 

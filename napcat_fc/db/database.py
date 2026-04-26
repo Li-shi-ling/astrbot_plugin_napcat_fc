@@ -9,6 +9,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlmodel import SQLModel
+from astrbot.api import logger
 
 
 class ToolDBManager:
@@ -72,6 +73,14 @@ class ToolDBManager:
         expected_columns = NapcatToolRecord.__table__.columns
         result = await conn.execute(text('PRAGMA table_info("napcat_tool")'))
         existing_columns = {str(row[1]) for row in result.fetchall() if len(row) > 1}
+        missing_columns = [
+            column.name for column in expected_columns if column.name not in existing_columns
+        ]
+        if missing_columns:
+            logger.warning(
+                "NapCat 工具发现数据库检测到旧版 napcat_tool 表结构，"
+                f"缺少字段: {', '.join(missing_columns)}；将自动执行兼容迁移。"
+            )
         for column in expected_columns:
             if column.name in existing_columns:
                 continue

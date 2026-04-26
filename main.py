@@ -2,6 +2,7 @@
 
 import asyncio
 import copy
+import importlib
 import json
 import os
 import platform
@@ -23,6 +24,33 @@ PLUGIN_DIR = Path(__file__).resolve().parent
 if str(PLUGIN_DIR) not in sys.path:
     sys.path.insert(0, str(PLUGIN_DIR))
 
+INTERNAL_MODULE_RELOAD_ORDER = (
+    "napcat_fc.db.tables",
+    "napcat_fc.db.database",
+    "napcat_fc.db.repo",
+    "napcat_fc.db",
+    "napcat_fc.tool_registry",
+)
+
+
+def _reload_internal_modules_for_hot_update():
+    for module_name in INTERNAL_MODULE_RELOAD_ORDER:
+        module = sys.modules.get(module_name)
+        if module is None:
+            continue
+        module_file = getattr(module, "__file__", None)
+        if not module_file:
+            continue
+        try:
+            module_path = Path(module_file).resolve()
+            module_path.relative_to(PLUGIN_DIR)
+        except (OSError, ValueError):
+            continue
+        importlib.reload(module)
+
+
+_reload_internal_modules_for_hot_update()
+
 from napcat_fc.db import ToolDBManager, ToolRegistryRepo
 from napcat_fc.tool_registry import build_tool_registry_data
 
@@ -31,7 +59,7 @@ from napcat_fc.tool_registry import build_tool_registry_data
     "astrbot_plugin_napcat_fc",
     "Soulter / AstrBot contributors",
     "将 NapCat / OneBot / go-cqhttp API 注册为 AstrBot 函数工具。",
-    "1.15.20",
+    "1.15.23",
 )
 class NapCatFunctionToolsPlugin(Star):
     SEARCH_TOOL_NAME = "napcat_search_tools"
@@ -280,14 +308,7 @@ class NapCatFunctionToolsPlugin(Star):
                     "candidate_limit": candidate_limit,
                     "result_limit": result_limit_value,
                     "matched_tools": [
-                        {
-                            "name": record.tool_name,
-                            "endpoint": record.endpoint,
-                            "capability": record.capability,
-                            "namespace": record.namespace,
-                            "risk_level": record.risk_level,
-                            "requires_confirmation": record.requires_confirmation,
-                        }
+                        self._serialize_search_tool_record(record)
                         for record in records
                     ],
                     "injected_tools": matched_names,
@@ -341,6 +362,16 @@ class NapCatFunctionToolsPlugin(Star):
             ),
             handler=search_handler,
         )
+
+    def _serialize_search_tool_record(self, record) -> dict:
+        return {
+            "name": record.tool_name,
+            "endpoint": record.endpoint,
+            "capability": record.capability,
+            "namespace": getattr(record, "namespace", ""),
+            "risk_level": getattr(record, "risk_level", "low"),
+            "requires_confirmation": getattr(record, "requires_confirmation", False),
+        }
 
     def _build_search_terms(self, keyword: str) -> list[str]:
         normalized = keyword.strip().lower()

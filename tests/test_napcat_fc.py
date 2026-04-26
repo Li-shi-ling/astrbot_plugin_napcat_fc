@@ -8,7 +8,7 @@ import sys
 import asyncio
 import uuid
 from pathlib import Path
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 
 import pytest
 
@@ -23,6 +23,7 @@ from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import (
 from astrbot.core.agent.tool import FunctionTool, ToolSet
 from astrbot.core.provider.entities import ProviderRequest
 
+import main as napcat_plugin_main
 from main import NapCatFunctionToolsPlugin
 from napcat_fc.db import ToolDBManager, ToolRegistryRepo
 from napcat_fc.registry import discover_all_endpoint_specs, discover_endpoint_specs, make_tool_name
@@ -742,6 +743,33 @@ def test_tool_discovery_report_and_constraint_are_maintained():
     assert "CONSTRAINTS.md" not in gitignore_lines
 
 
+def test_hot_update_reloads_internal_napcat_modules(monkeypatch):
+    plugin_dir = Path(__file__).resolve().parents[1]
+    reloaded = []
+
+    for module_name in napcat_plugin_main.INTERNAL_MODULE_RELOAD_ORDER:
+        fake_module = ModuleType(module_name)
+        fake_module.__file__ = str(
+            plugin_dir / Path(*module_name.split(".")).with_suffix(".py")
+        )
+        monkeypatch.setitem(sys.modules, module_name, fake_module)
+
+    external_module = ModuleType("napcat_fc.external")
+    external_module.__file__ = str(Path(sys.executable).resolve())
+    monkeypatch.setitem(sys.modules, "napcat_fc.external", external_module)
+
+    def fake_reload(module):
+        reloaded.append(module.__name__)
+        return module
+
+    monkeypatch.setattr(napcat_plugin_main.importlib, "reload", fake_reload)
+
+    napcat_plugin_main._reload_internal_modules_for_hot_update()
+
+    assert reloaded == list(napcat_plugin_main.INTERNAL_MODULE_RELOAD_ORDER)
+    assert "napcat_fc.external" not in reloaded
+
+
 def test_optimized_tool_prompts_include_searchable_context():
     records = build_tool_registry_data(NapCatFunctionToolsPlugin)
     by_name = {record.tool_name: record for record in records}
@@ -1139,6 +1167,65 @@ async def test_tool_db_init_migrates_old_tool_table_metadata_columns():
                 path.unlink()
 
 
+@pytest.mark.asyncio
+async def test_tool_db_init_warns_when_migrating_old_tool_table(monkeypatch):
+    warnings = []
+    monkeypatch.setattr("napcat_fc.db.database.logger.warning", warnings.append)
+    db_path = (
+        Path(__file__).resolve().parents[1]
+        / f".test-tool-registry-migration-warning-{uuid.uuid4().hex}.db"
+    )
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            """
+            CREATE TABLE napcat_tool (
+                tool_name VARCHAR NOT NULL PRIMARY KEY,
+                endpoint VARCHAR NOT NULL,
+                method_name VARCHAR NOT NULL,
+                capability VARCHAR NOT NULL DEFAULT '',
+                parameters_json VARCHAR NOT NULL DEFAULT '[]',
+                required_parameters_json VARCHAR NOT NULL DEFAULT '[]',
+                platforms_json VARCHAR NOT NULL DEFAULT '[]',
+                enabled BOOLEAN NOT NULL DEFAULT 1,
+                updated_at DATETIME NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE napcat_discovered_tool (
+                tool_name VARCHAR NOT NULL PRIMARY KEY,
+                position INTEGER NOT NULL,
+                updated_at DATETIME NOT NULL
+            )
+            """
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    db = ToolDBManager(str(db_path))
+    try:
+        await db.init_db()
+        assert len(warnings) == 1
+        assert "旧版 napcat_tool 表结构" in warnings[0]
+        assert "namespace" in warnings[0]
+        assert "aliases_json" in warnings[0]
+        assert "自动执行兼容迁移" in warnings[0]
+
+        warnings.clear()
+        db._initialized = False
+        await db.init_db()
+        assert warnings == []
+    finally:
+        await db.close()
+        for suffix in ("", "-wal", "-shm"):
+            path = Path(str(db_path) + suffix)
+            if path.exists():
+                path.unlink()
+
+
 def test_deactivate_registered_napcat_tools_marks_global_tools_inactive():
     napcat_tool = make_function_tool("napcat_send_msg")
     other_tool = make_function_tool("other_tool")
@@ -1210,6 +1297,24 @@ def test_search_candidate_limit_uses_config_with_default_and_minimum():
 
     plugin.config["search_candidate_limit"] = "invalid"
     assert plugin._get_search_candidate_limit() == 10
+
+
+def test_search_result_serialization_accepts_legacy_record_without_metadata():
+    plugin = NapCatFunctionToolsPlugin(context=FakeContext([]))
+    record = SimpleNamespace(
+        tool_name="napcat_get_version_info",
+        endpoint="get_version_info",
+        capability="获取 NapCat 版本信息",
+    )
+
+    assert plugin._serialize_search_tool_record(record) == {
+        "name": "napcat_get_version_info",
+        "endpoint": "get_version_info",
+        "capability": "获取 NapCat 版本信息",
+        "namespace": "",
+        "risk_level": "low",
+        "requires_confirmation": False,
+    }
 
 
 def test_discovered_tool_limit_uses_config_with_default_and_minimum():

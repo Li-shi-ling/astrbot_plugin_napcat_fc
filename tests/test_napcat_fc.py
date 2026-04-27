@@ -1234,14 +1234,14 @@ async def test_tool_db_init_warns_when_migrating_old_tool_table(monkeypatch):
                 path.unlink()
 
 
-def test_deactivate_registered_napcat_tools_marks_global_tools_inactive():
+def test_remove_registered_napcat_tools_removes_global_tool_residue():
     napcat_tool = make_function_tool("napcat_send_msg")
     other_tool = make_function_tool("other_tool")
     plugin = NapCatFunctionToolsPlugin(context=FakeContext([napcat_tool, other_tool]))
 
-    plugin._deactivate_registered_napcat_tools()
+    plugin._remove_registered_napcat_tools()
 
-    assert napcat_tool.active is False
+    assert plugin.context.get_llm_tool_manager().get_func("napcat_send_msg") is None
     assert other_tool.active is True
 
 
@@ -1305,26 +1305,6 @@ def test_search_candidate_limit_uses_config_with_default_and_minimum():
 
     plugin.config["search_candidate_limit"] = "invalid"
     assert plugin._get_search_candidate_limit() == 10
-
-
-def test_tool_registration_mode_uses_lazy_by_default_and_accepts_aliases():
-    plugin = NapCatFunctionToolsPlugin(context=FakeContext([]))
-    assert plugin._get_tool_registration_mode() == "lazy"
-
-    plugin.config["tool_registration_mode"] = "static"
-    assert plugin._get_tool_registration_mode() == "static"
-
-    plugin.config["tool_registration_mode"] = "legacy"
-    assert plugin._get_tool_registration_mode() == "static"
-
-    plugin.config["tool_registration_mode"] = "decorator"
-    assert plugin._get_tool_registration_mode() == "static"
-
-    plugin.config["tool_registration_mode"] = "dynamic"
-    assert plugin._get_tool_registration_mode() == "lazy"
-
-    plugin.config["tool_registration_mode"] = "unknown"
-    assert plugin._get_tool_registration_mode() == "lazy"
 
 
 def test_search_result_serialization_accepts_legacy_record_without_metadata():
@@ -1420,7 +1400,6 @@ async def test_on_llm_request_injects_discovered_tools_as_request_scope_copies()
 async def test_on_llm_request_builds_discovered_tools_in_lazy_mode_without_global_registration():
     plugin = NapCatFunctionToolsPlugin(
         context=FakeContext([]),
-        config={"tool_registration_mode": "lazy"},
     )
 
     db_path = (
@@ -1456,18 +1435,6 @@ async def test_on_llm_request_builds_discovered_tools_in_lazy_mode_without_globa
             path = Path(str(db_path) + suffix)
             if path.exists():
                 path.unlink()
-
-
-def test_static_mode_registers_all_tools_globally_before_deactivation():
-    plugin = NapCatFunctionToolsPlugin(
-        context=FakeContext([]),
-        config={"tool_registration_mode": "static"},
-    )
-
-    plugin._register_all_napcat_tools_globally()
-
-    assert plugin.context.get_llm_tool_manager().get_func("napcat_send_msg") is not None
-    assert len(plugin.context.get_llm_tool_manager().func_list) == plugin.tool_count
 
 
 @pytest.mark.asyncio

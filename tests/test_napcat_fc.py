@@ -152,12 +152,13 @@ def test_discover_endpoint_specs_finds_napcat_docs():
     assert len(endpoints) >= 100
 
 
-def test_main_uses_metadata_only_tool_markers_without_llm_tool_decorators():
+def test_only_search_tool_uses_llm_tool_decorator_and_api_tools_use_markers():
     plugin_dir = Path(__file__).resolve().parents[1]
     source = (plugin_dir / "main.py").read_text(encoding="utf-8")
 
-    assert "@filter.llm_tool" not in source
-    assert source.count("# napcat_tool:") >= 100
+    assert source.count("@filter.llm_tool") == 1
+    assert "@filter.llm_tool(name='napcat_search_tools')" in source
+    assert source.count("# napcat_tool:") == 162
     assert "napcat_call_api" not in source
     assert "# napcat_tool: napcat_send_msg" in source
     assert "# napcat_tool: napcat_send_group_msg" not in source
@@ -462,6 +463,19 @@ async def test_send_poke_defaults_to_current_sender_in_private_chat():
 
     assert '"status": "ok"' in result
     assert event.bot.api.calls == [("send_poke", {"user_id": 123456})]
+
+
+@pytest.mark.asyncio
+async def test_send_like_defaults_times_to_one_when_argument_missing():
+    event = make_aiocqhttp_event(user_id="123456")
+    plugin = NapCatFunctionToolsPlugin(context=None)
+
+    result = await plugin.napcat_send_like_tool(event)
+
+    assert '"status": "ok"' in result
+    assert event.bot.api.calls == [
+        ("send_like", {"times": 1, "user_id": 123456})
+    ]
 
 
 @pytest.mark.asyncio
@@ -1497,6 +1511,42 @@ async def test_search_tool_discovers_persists_and_immediately_injects_tools():
         assert req.func_tool.get_tool("napcat_send_msg") is not None
         assert payload["max_discovered_tools"] == 1
         assert len(await plugin.tool_registry_repo.list_discovered_tool_names()) <= 1
+    finally:
+        await plugin.tool_db.close()
+        for suffix in ("", "-wal", "-shm"):
+            path = Path(str(db_path) + suffix)
+            if path.exists():
+                path.unlink()
+
+
+@pytest.mark.asyncio
+async def test_registered_search_tool_uses_remembered_request_context():
+    send_group_tool = make_function_tool("napcat_send_msg", active=False)
+    plugin = NapCatFunctionToolsPlugin(context=FakeContext([send_group_tool]))
+    db_path = (
+        Path(__file__).resolve().parents[1]
+        / f".test-registered-search-tools-{uuid.uuid4().hex}.db"
+    )
+    plugin.tool_db = ToolDBManager(str(db_path))
+    plugin.tool_registry_repo = ToolRegistryRepo(plugin.tool_db)
+    await plugin.tool_db.init_db()
+    try:
+        records = [
+            record
+            for record in build_tool_registry_data(NapCatFunctionToolsPlugin)
+            if record.tool_name == "napcat_send_msg"
+        ]
+        await plugin.tool_registry_repo.replace_all_tools(records)
+        event = make_aiocqhttp_event()
+        req = ProviderRequest()
+        req.func_tool = ToolSet()
+        await plugin.inject_napcat_tools_on_llm_request(event, req)
+
+        result = await plugin.napcat_search_tools_tool(event, keyword="send msg")
+        payload = json.loads(result)
+
+        assert payload["injected_count"] == 1
+        assert req.func_tool.get_tool("napcat_send_msg") is not None
     finally:
         await plugin.tool_db.close()
         for suffix in ("", "-wal", "-shm"):

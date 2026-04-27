@@ -58,7 +58,7 @@ from napcat_fc.tool_registry import build_tool_registry_data
     "astrbot_plugin_napcat_fc",
     "Soulter / AstrBot contributors",
     "将 NapCat / OneBot / go-cqhttp API 注册为 AstrBot 函数工具。",
-    "1.15.26",
+    "1.15.28",
 )
 class NapCatFunctionToolsPlugin(Star):
     SEARCH_TOOL_NAME = "napcat_search_tools"
@@ -106,6 +106,7 @@ class NapCatFunctionToolsPlugin(Star):
         self.tool_registry_repo = ToolRegistryRepo(self.tool_db)
         self._debug_started_at = time.perf_counter()
         self._debug_last_at = self._debug_started_at
+        self._provider_requests_by_event_id: dict[int, ProviderRequest] = {}
 
     def _build_action_parameter_names(self) -> dict[str, set[str]]:
         action_parameter_names: dict[str, set[str]] = {}
@@ -159,6 +160,7 @@ class NapCatFunctionToolsPlugin(Star):
             self._debug_log("llm_request:skip_non_aiocqhttp")
             return
 
+        self._remember_provider_request(event, req)
         self._ensure_request_tool_set(req)
         req.func_tool.add_tool(self._build_search_tool(req))
         self._debug_log("llm_request:search_tool_injected")
@@ -180,6 +182,23 @@ class NapCatFunctionToolsPlugin(Star):
         if req.func_tool is None:
             req.func_tool = ToolSet()
             self._debug_log("request_tool_set:created")
+
+    def _remember_provider_request(
+        self, event: AstrMessageEvent, req: ProviderRequest
+    ):
+        self._provider_requests_by_event_id[id(event)] = req
+        while len(self._provider_requests_by_event_id) > 64:
+            oldest_key = next(iter(self._provider_requests_by_event_id))
+            self._provider_requests_by_event_id.pop(oldest_key, None)
+        self._debug_log(
+            "request_context:remembered",
+            tracked_count=len(self._provider_requests_by_event_id),
+        )
+
+    def _get_remembered_provider_request(
+        self, event: AstrMessageEvent
+    ) -> ProviderRequest | None:
+        return self._provider_requests_by_event_id.get(id(event))
 
     def _inject_tool_names_into_request(
         self, req: ProviderRequest, tool_names: list[str]
@@ -227,103 +246,7 @@ class NapCatFunctionToolsPlugin(Star):
             result_limit: int = None,
         ) -> str:
             """按关键词搜索 NapCat 工具，并立即注入本轮请求。"""
-            if not self._is_aiocqhttp_event(event):
-                self._debug_log(
-                    "search_tool:reject_non_aiocqhttp",
-                    event_type=type(event).__name__,
-                )
-                raise ValueError("NapCat search tool requires an aiocqhttp/NapCat message event.")
-
-            self._debug_log(
-                "search_tool:start",
-                keyword=keyword,
-                event_type=type(event).__name__,
-            )
-            search_terms = self._build_search_terms(keyword)
-            candidate_limit = self._get_search_candidate_limit()
-            result_limit_value = self._get_search_result_limit(result_limit)
-            candidate_records = await self._search_tool_candidates(
-                keyword,
-                search_terms,
-                candidate_limit,
-            )
-            platform_records = [
-                record
-                for record in candidate_records
-                if self._is_tool_available_on_current_platform(record.tool_name)
-            ]
-            discovered_names = set(
-                await self.tool_registry_repo.list_discovered_tool_names()
-            )
-            request_scope_names = self._get_request_scope_napcat_tool_names(req)
-            excluded_names = set(discovered_names)
-            unlimited_request_injection = (
-                self._is_unlimited_request_tool_injection_enabled()
-            )
-            if unlimited_request_injection:
-                excluded_names.update(request_scope_names)
-            skipped_discovered_names = [
-                record.tool_name
-                for record in platform_records
-                if record.tool_name in excluded_names
-            ]
-            records = [
-                record
-                for record in platform_records
-                if record.tool_name not in excluded_names
-            ][:result_limit_value]
-            matched_names = [record.tool_name for record in records]
-            self._debug_log(
-                "search_tool:matched",
-                keyword=keyword,
-                search_terms=search_terms,
-                candidate_limit=candidate_limit,
-                candidate_count=len(candidate_records),
-                platform_candidate_count=len(platform_records),
-                skipped_discovered_count=len(skipped_discovered_names),
-                request_scope_tool_count=len(request_scope_names),
-                unlimited_request_tool_injection=unlimited_request_injection,
-                result_limit=result_limit_value,
-                matched_count=len(matched_names),
-                matched_tools=matched_names,
-            )
-            discovered_tool_limit = self._get_discovered_tool_limit()
-            queue = await self.tool_registry_repo.add_discovered_tool_names(
-                matched_names,
-                max_size=discovered_tool_limit,
-            )
-            self._debug_log(
-                "search_tool:queue_updated",
-                queue_count=len(queue),
-            )
-            injected_count = 0
-            if self.config.get("dynamic_injection_enabled", True) is not False:
-                injected_count = self._inject_tool_names_into_request(req, matched_names)
-            else:
-                self._debug_log("search_tool:dynamic_injection_disabled")
-            self._debug_log("search_tool:done", injected_count=injected_count)
-            return json.dumps(
-                {
-                    "keyword": keyword,
-                    "search_terms": search_terms,
-                    "candidate_limit": candidate_limit,
-                    "result_limit": result_limit_value,
-                    "matched_tools": [
-                        self._serialize_search_tool_record(record)
-                        for record in records
-                    ],
-                    "injected_tools": matched_names,
-                    "injected_count": injected_count,
-                    "discovered_tool_count": len(queue),
-                    "max_discovered_tools": discovered_tool_limit,
-                    "request_scope_tool_count": len(
-                        self._get_request_scope_napcat_tool_names(req)
-                    ),
-                    "unlimited_request_tool_injection": unlimited_request_injection,
-                    "skipped_discovered_tools": sorted(skipped_discovered_names),
-                },
-                ensure_ascii=False,
-            )
+            return await self._run_search_tool(event, req, keyword, result_limit)
 
         return self.context.get_llm_tool_manager().spec_to_func(
             name=self.SEARCH_TOOL_NAME,
@@ -362,6 +285,140 @@ class NapCatFunctionToolsPlugin(Star):
                 "搜索后再使用返回并已注入的具体工具。"
             ),
             handler=search_handler,
+        )
+
+    @filter.llm_tool(name='napcat_search_tools')
+    async def napcat_search_tools_tool(
+        self,
+        event: AstrMessageEvent,
+        keyword: str,
+        result_limit: int = None,
+    ) -> str:
+        """在 NapCat/OneBot/go-cqhttp 工具库中按关键词搜索工具，并注入当前 LLM 请求
+
+Args:
+    keyword(str): 必填，搜索 NapCat 工具能力、工具名、API 名或参数名的关键词；多个词用空格隔开时会并发分词搜索，并按综合相关度排序。
+    result_limit(int): 可选，本次最多加入持久化发现队列并注入当前请求的工具数量；默认 3，最小有效值为 1。
+
+Returns:
+    str: 返回搜索结果、已注入工具、发现队列数量和跳过项的 JSON 字符串。"""
+        req = self._get_remembered_provider_request(event)
+        if req is None:
+            return json.dumps(
+                {
+                    "ok": False,
+                    "message": (
+                        "napcat_search_tools 需要在当前 LLM 请求上下文中调用。"
+                        "请先触发一次 aiocqhttp/NapCat 消息请求，再调用本工具。"
+                    ),
+                },
+                ensure_ascii=False,
+            )
+        return await self._run_search_tool(event, req, keyword, result_limit)
+
+    async def _run_search_tool(
+        self,
+        event: AstrMessageEvent,
+        req: ProviderRequest,
+        keyword: str,
+        result_limit: int = None,
+    ) -> str:
+        if not self._is_aiocqhttp_event(event):
+            self._debug_log(
+                "search_tool:reject_non_aiocqhttp",
+                event_type=type(event).__name__,
+            )
+            raise ValueError("NapCat search tool requires an aiocqhttp/NapCat message event.")
+
+        self._debug_log(
+            "search_tool:start",
+            keyword=keyword,
+            event_type=type(event).__name__,
+        )
+        search_terms = self._build_search_terms(keyword)
+        candidate_limit = self._get_search_candidate_limit()
+        result_limit_value = self._get_search_result_limit(result_limit)
+        candidate_records = await self._search_tool_candidates(
+            keyword,
+            search_terms,
+            candidate_limit,
+        )
+        platform_records = [
+            record
+            for record in candidate_records
+            if self._is_tool_available_on_current_platform(record.tool_name)
+        ]
+        discovered_names = set(
+            await self.tool_registry_repo.list_discovered_tool_names()
+        )
+        request_scope_names = self._get_request_scope_napcat_tool_names(req)
+        excluded_names = set(discovered_names)
+        unlimited_request_injection = (
+            self._is_unlimited_request_tool_injection_enabled()
+        )
+        if unlimited_request_injection:
+            excluded_names.update(request_scope_names)
+        skipped_discovered_names = [
+            record.tool_name
+            for record in platform_records
+            if record.tool_name in excluded_names
+        ]
+        records = [
+            record
+            for record in platform_records
+            if record.tool_name not in excluded_names
+        ][:result_limit_value]
+        matched_names = [record.tool_name for record in records]
+        self._debug_log(
+            "search_tool:matched",
+            keyword=keyword,
+            search_terms=search_terms,
+            candidate_limit=candidate_limit,
+            candidate_count=len(candidate_records),
+            platform_candidate_count=len(platform_records),
+            skipped_discovered_count=len(skipped_discovered_names),
+            request_scope_tool_count=len(request_scope_names),
+            unlimited_request_tool_injection=unlimited_request_injection,
+            result_limit=result_limit_value,
+            matched_count=len(matched_names),
+            matched_tools=matched_names,
+        )
+        discovered_tool_limit = self._get_discovered_tool_limit()
+        queue = await self.tool_registry_repo.add_discovered_tool_names(
+            matched_names,
+            max_size=discovered_tool_limit,
+        )
+        self._debug_log(
+            "search_tool:queue_updated",
+            queue_count=len(queue),
+        )
+        injected_count = 0
+        if self.config.get("dynamic_injection_enabled", True) is not False:
+            injected_count = self._inject_tool_names_into_request(req, matched_names)
+        else:
+            self._debug_log("search_tool:dynamic_injection_disabled")
+        self._debug_log("search_tool:done", injected_count=injected_count)
+        return json.dumps(
+            {
+                "keyword": keyword,
+                "search_terms": search_terms,
+                "candidate_limit": candidate_limit,
+                "result_limit": result_limit_value,
+                "matched_tools": [
+                    self._serialize_search_tool_record(record)
+                    for record in records
+                ],
+                "injected_tools": matched_names,
+                "injected_count": injected_count,
+                "discovered_tool_count": len(queue),
+                "max_discovered_tools": discovered_tool_limit,
+                "request_scope_tool_count": len(
+                    self._get_request_scope_napcat_tool_names(req)
+                ),
+                "unlimited_request_tool_injection": unlimited_request_injection,
+                "skipped_discovered_tools": sorted(skipped_discovered_names),
+            },
+            ensure_ascii=False,
         )
 
     def _serialize_search_tool_record(self, record) -> dict:
@@ -4039,13 +4096,13 @@ Returns:
     async def napcat_send_like_tool(
         self,
         event: AstrMessageEvent,
-        times: int,
+        times: int = 1,
         user_id: int = None,
     ):
         """给用户资料卡点赞，适合对 QQ 用户点赞、名片点赞、主页互动和好友点赞任务
 
 Args:
-    times(int): 必填，赞的次数，每个好友每天最多 10 次 默认值: 1。
+    times(int): 可选，赞的次数，每个好友每天最多 10 次。默认值为 1。
     user_id(int): 可选，对方 QQ 号。默认使用当前消息发送者的用户 ID。
 
 Returns:

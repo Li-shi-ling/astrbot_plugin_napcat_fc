@@ -1,6 +1,6 @@
 ﻿name: astrbot_plugin_napcat_fc
 display_name: NapCat 函数工具
 desc: 将 NapCat / OneBot / go-cqhttp API 按需提供为 AstrBot 可供 LLM 调用的函数工具。
-version: v1.15.26
+version: v1.15.27
 author: lishining
 repo: https://github.com/Li-shi-ling/astrbot_plugin_napcat_fc

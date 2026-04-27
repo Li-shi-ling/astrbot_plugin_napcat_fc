@@ -743,10 +743,6 @@ def test_todo_tracks_all_tools_and_prompt_progress():
     assert "- [x] 001. `napcat_bot_exit`" in todo_text
     assert "- [x] 162. `napcat_upload_private_file`" in todo_text
     assert todo_text.count("- [ ]") == 0
-    gitignore_lines = (Path(__file__).resolve().parents[1] / ".gitignore").read_text(
-        encoding="utf-8"
-    ).splitlines()
-    assert "TODO.md" not in gitignore_lines
 
 
 def test_tool_discovery_report_and_constraint_are_maintained():
@@ -766,10 +762,6 @@ def test_tool_discovery_report_and_constraint_are_maintained():
     assert "python scripts/package_plugin.py" in constraints_text
     assert "report/tool_discovery_report.md" in readme_text
     assert "python scripts/package_plugin.py" in readme_text
-    gitignore_lines = (plugin_dir / ".gitignore").read_text(
-        encoding="utf-8"
-    ).splitlines()
-    assert "CONSTRAINTS.md" not in gitignore_lines
 
 
 def test_package_script_builds_astrbot_install_zip_from_tracked_files(tmp_path):
@@ -799,6 +791,9 @@ def test_package_script_builds_astrbot_install_zip_from_tracked_files(tmp_path):
     assert "README.md" in names
     assert "napcat_fc/db/database.py" in names
     assert "TODO.md" not in names
+    assert "CONSTRAINTS.md" not in names
+    assert "待删除.md" not in names
+    assert all(not name.startswith("report/") for name in names)
     assert all(not name.startswith("dist/") for name in names)
 
 

@@ -1,5 +1,11 @@
 ﻿# 更新日志
 
+## v1.15.28 - 2026-04-27
+
+- 修复 `napcat_send_like` 提示词写有默认值但函数签名仍要求 `times` 必填的问题。
+- `napcat_send_like` 现在未传 `times` 时默认使用 `1`，避免 LLM 省略参数时触发 AstrBot handler 参数不匹配警告。
+- 测试覆盖空参数调用点赞工具和工具元数据中 `times` 不再标记为必填。
+
 ## v1.15.27 - 2026-04-27
 
 - `napcat_search_tools` 作为唯一 `@filter.llm_tool` 常驻注册工具保留，确保 LLM 始终有稳定工具发现入口。

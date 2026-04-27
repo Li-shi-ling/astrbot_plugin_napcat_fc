@@ -704,6 +704,9 @@ def test_build_tool_registry_data_extracts_tool_discovery_metadata():
     assert len(records) == 162
     assert by_name["napcat_send_msg"].endpoint == "send_msg"
     assert by_name["napcat_send_msg"].method_name == "napcat_send_msg_tool"
+    assert "times" not in json.loads(
+        by_name["napcat_send_like"].required_parameters_json
+    )
     assert "群聊或私聊" in by_name["napcat_send_msg"].capability
 
     params = json.loads(by_name["napcat_send_msg"].parameters_json)

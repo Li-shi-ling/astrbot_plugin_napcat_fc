@@ -93,6 +93,13 @@ class FakeToolManager:
             handler=handler,
         )
 
+    def add_func(self, name, func_args, desc, handler):
+        self.remove_func(name)
+        self.func_list.append(self.spec_to_func(name, func_args, desc, handler))
+
+    def remove_func(self, name):
+        self.func_list = [tool for tool in self.func_list if tool.name != name]
+
 
 class FakeContext:
     def __init__(self, tools):
@@ -145,16 +152,17 @@ def test_discover_endpoint_specs_finds_napcat_docs():
     assert len(endpoints) >= 100
 
 
-def test_main_registers_explicit_llm_tool_decorators():
+def test_main_uses_metadata_only_tool_markers_without_llm_tool_decorators():
     plugin_dir = Path(__file__).resolve().parents[1]
     source = (plugin_dir / "main.py").read_text(encoding="utf-8")
 
-    assert source.count("@filter.llm_tool") >= 100
+    assert "@filter.llm_tool" not in source
+    assert source.count("# napcat_tool:") >= 100
     assert "napcat_call_api" not in source
-    assert "@filter.llm_tool(name='napcat_send_msg')" in source
-    assert "@filter.llm_tool(name='napcat_send_group_msg')" not in source
-    assert "@filter.llm_tool(name='napcat_send_private_msg')" not in source
-    assert "@filter.llm_tool(name='napcat_set_group_anonymous_ban')" in source
+    assert "# napcat_tool: napcat_send_msg" in source
+    assert "# napcat_tool: napcat_send_group_msg" not in source
+    assert "# napcat_tool: napcat_send_private_msg" not in source
+    assert "# napcat_tool: napcat_set_group_anonymous_ban" in source
     send_msg_signature = source.split("async def napcat_send_msg_tool(", 1)[1].split("):", 1)[0]
     assert "payload" not in send_msg_signature
     assert "group_id: " in source
@@ -192,7 +200,7 @@ assert str(plugin_dir) in sys.path
 
 def test_platform_tool_name_class_attributes_only_record_os_specific_tools():
     source = (Path(__file__).resolve().parents[1] / "main.py").read_text(encoding="utf-8")
-    registered_names = tuple(re.findall(r"@filter\.llm_tool\(name='([^']+)'\)", source))
+    registered_names = tuple(re.findall(r"# napcat_tool:\s*([a-zA-Z0-9_]+)", source))
 
     assert NapCatFunctionToolsPlugin.WINDOWS_TOOL_NAMES == (
         "napcat_dot_ocr_image",
@@ -1299,6 +1307,26 @@ def test_search_candidate_limit_uses_config_with_default_and_minimum():
     assert plugin._get_search_candidate_limit() == 10
 
 
+def test_tool_registration_mode_uses_lazy_by_default_and_accepts_aliases():
+    plugin = NapCatFunctionToolsPlugin(context=FakeContext([]))
+    assert plugin._get_tool_registration_mode() == "lazy"
+
+    plugin.config["tool_registration_mode"] = "static"
+    assert plugin._get_tool_registration_mode() == "static"
+
+    plugin.config["tool_registration_mode"] = "legacy"
+    assert plugin._get_tool_registration_mode() == "static"
+
+    plugin.config["tool_registration_mode"] = "decorator"
+    assert plugin._get_tool_registration_mode() == "static"
+
+    plugin.config["tool_registration_mode"] = "dynamic"
+    assert plugin._get_tool_registration_mode() == "lazy"
+
+    plugin.config["tool_registration_mode"] = "unknown"
+    assert plugin._get_tool_registration_mode() == "lazy"
+
+
 def test_search_result_serialization_accepts_legacy_record_without_metadata():
     plugin = NapCatFunctionToolsPlugin(context=FakeContext([]))
     record = SimpleNamespace(
@@ -1386,6 +1414,60 @@ async def test_on_llm_request_injects_discovered_tools_as_request_scope_copies()
             path = Path(str(db_path) + suffix)
             if path.exists():
                 path.unlink()
+
+
+@pytest.mark.asyncio
+async def test_on_llm_request_builds_discovered_tools_in_lazy_mode_without_global_registration():
+    plugin = NapCatFunctionToolsPlugin(
+        context=FakeContext([]),
+        config={"tool_registration_mode": "lazy"},
+    )
+
+    db_path = (
+        Path(__file__).resolve().parents[1]
+        / f".test-lazy-tools-{uuid.uuid4().hex}.db"
+    )
+    plugin.tool_db = ToolDBManager(str(db_path))
+    plugin.tool_registry_repo = ToolRegistryRepo(plugin.tool_db)
+    await plugin.tool_db.init_db()
+    try:
+        records = [
+            record
+            for record in build_tool_registry_data(NapCatFunctionToolsPlugin)
+            if record.tool_name == "napcat_send_msg"
+        ]
+        await plugin.tool_registry_repo.replace_all_tools(records)
+        await plugin.tool_registry_repo.replace_discovered_tool_names(
+            ["napcat_send_msg"]
+        )
+
+        req = ProviderRequest()
+        req.func_tool = ToolSet()
+        await plugin.inject_napcat_tools_on_llm_request(make_aiocqhttp_event(), req)
+
+        injected = req.func_tool.get_tool("napcat_send_msg")
+        assert injected is not None
+        assert injected.active is True
+        assert injected.handler == plugin.napcat_send_msg_tool
+        assert "message" in injected.parameters["properties"]
+    finally:
+        await plugin.tool_db.close()
+        for suffix in ("", "-wal", "-shm"):
+            path = Path(str(db_path) + suffix)
+            if path.exists():
+                path.unlink()
+
+
+def test_static_mode_registers_all_tools_globally_before_deactivation():
+    plugin = NapCatFunctionToolsPlugin(
+        context=FakeContext([]),
+        config={"tool_registration_mode": "static"},
+    )
+
+    plugin._register_all_napcat_tools_globally()
+
+    assert plugin.context.get_llm_tool_manager().get_func("napcat_send_msg") is not None
+    assert len(plugin.context.get_llm_tool_manager().func_list) == plugin.tool_count
 
 
 @pytest.mark.asyncio

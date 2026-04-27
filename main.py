@@ -1,7 +1,6 @@
 ﻿from __future__ import annotations
 
 import asyncio
-import copy
 import importlib
 import json
 import os
@@ -59,7 +58,7 @@ from napcat_fc.tool_registry import build_tool_registry_data
     "astrbot_plugin_napcat_fc",
     "Soulter / AstrBot contributors",
     "将 NapCat / OneBot / go-cqhttp API 注册为 AstrBot 函数工具。",
-    "1.15.23",
+    "1.15.26",
 )
 class NapCatFunctionToolsPlugin(Star):
     SEARCH_TOOL_NAME = "napcat_search_tools"
@@ -87,6 +86,9 @@ class NapCatFunctionToolsPlugin(Star):
         self.config = dict(config or {})
         self.tool_count = 162
         self.tool_registry_records = build_tool_registry_data(type(self))
+        self.tool_registry_records_by_name = {
+            record.tool_name: record for record in self.tool_registry_records
+        }
         self.action_parameter_names = self._build_action_parameter_names()
         self.napcat_tool_names = tuple(
             record.tool_name for record in self.tool_registry_records
@@ -128,10 +130,11 @@ class NapCatFunctionToolsPlugin(Star):
             "initialize:tool_registry_synced",
             record_count=len(self.tool_registry_records),
         )
-        self._deactivate_registered_napcat_tools()
+        self._remove_registered_napcat_tools()
         logger.info(
             f"NapCat 函数工具已初始化：{self.tool_count} 个，"
-            f"工具管理数据库已同步：{len(self.tool_registry_records)} 个。"
+            f"工具管理数据库已同步：{len(self.tool_registry_records)} 个，"
+            "具体工具按需注入。"
         )
         self._debug_log("initialize:done")
 
@@ -183,7 +186,6 @@ class NapCatFunctionToolsPlugin(Star):
     ) -> int:
         self._debug_log("inject_tools:start", requested_count=len(tool_names))
         self._ensure_request_tool_set(req)
-        tool_mgr = self.context.get_llm_tool_manager()
         injected_count = 0
         known_names = set(self.napcat_tool_names)
         for tool_name in dict.fromkeys(tool_names):
@@ -196,10 +198,9 @@ class NapCatFunctionToolsPlugin(Star):
                     current_platform=self.current_platform_name,
                 )
                 continue
-            tool = tool_mgr.get_func(tool_name)
-            if tool is None:
+            request_tool = self._build_tool_from_registry_record(tool_name)
+            if request_tool is None:
                 continue
-            request_tool = copy.copy(tool)
             request_tool.active = True
             req.func_tool.add_tool(request_tool)
             injected_count += 1
@@ -415,6 +416,65 @@ class NapCatFunctionToolsPlugin(Star):
     def _is_unlimited_request_tool_injection_enabled(self) -> bool:
         return self.config.get("unlimited_request_tool_injection", False) is True
 
+    def _build_tool_from_registry_record(self, tool_name: str):
+        record = self.tool_registry_records_by_name.get(tool_name)
+        if record is None:
+            self._debug_log("tool_build:missing_record", tool_name=tool_name)
+            return None
+        handler = getattr(self, record.method_name, None)
+        if handler is None:
+            self._debug_log(
+                "tool_build:missing_handler",
+                tool_name=tool_name,
+                method_name=record.method_name,
+            )
+            return None
+        return self.context.get_llm_tool_manager().spec_to_func(
+            name=record.tool_name,
+            func_args=self._build_func_args_from_record(record),
+            desc=record.capability,
+            handler=handler,
+        )
+
+    def _build_func_args_from_record(self, record) -> list[dict]:
+        try:
+            parameters = json.loads(record.parameters_json)
+        except (TypeError, json.JSONDecodeError):
+            parameters = []
+        func_args = []
+        for parameter in parameters:
+            if not isinstance(parameter, dict) or not parameter.get("name"):
+                continue
+            arg = {
+                "name": parameter["name"],
+                "type": self._normalize_json_schema_type(parameter.get("type")),
+                "description": parameter.get("description", ""),
+            }
+            if arg["type"] == "array":
+                arg["items"] = {"type": "object"}
+            func_args.append(arg)
+        return func_args
+
+    def _normalize_json_schema_type(self, annotation: str | None) -> str:
+        normalized = str(annotation or "string").strip().lower()
+        normalized = normalized.replace("typing.", "")
+        if normalized.startswith(("list", "tuple", "set")):
+            return "array"
+        if normalized.startswith(("dict", "mapping")):
+            return "object"
+        return {
+            "str": "string",
+            "string": "string",
+            "int": "integer",
+            "integer": "integer",
+            "float": "number",
+            "number": "number",
+            "bool": "boolean",
+            "boolean": "boolean",
+            "any": "string",
+            "none": "string",
+        }.get(normalized, "string")
+
     async def _search_tool_candidates(
         self,
         keyword: str,
@@ -501,21 +561,23 @@ class NapCatFunctionToolsPlugin(Star):
             score += 5
         return score
 
-    def _deactivate_registered_napcat_tools(self):
+    def _remove_registered_napcat_tools(self):
         if self.context is None:
-            self._debug_log("global_tools_deactivate:skip_no_context")
+            self._debug_log("global_tools_remove:skip_no_context")
             return
         tool_mgr = self.context.get_llm_tool_manager()
-        tool_names = set(self.napcat_tool_names)
-        deactivated_count = 0
-        for tool in tool_mgr.func_list:
-            if tool.name in tool_names:
-                tool.active = False
-                deactivated_count += 1
-        self._debug_log(
-            "global_tools_deactivate:done",
-            deactivated_count=deactivated_count,
-        )
+        remove_func = getattr(tool_mgr, "remove_func", None)
+        if not callable(remove_func):
+            self._debug_log("global_tools_remove:skip_no_remove_func")
+            return
+        removed_count = 0
+        for tool_name in self.napcat_tool_names:
+            before_count = len(getattr(tool_mgr, "func_list", ()))
+            remove_func(tool_name)
+            after_count = len(getattr(tool_mgr, "func_list", ()))
+            if after_count < before_count:
+                removed_count += 1
+        self._debug_log("global_tools_remove:done", removed_count=removed_count)
 
     def _unload_request_scope_napcat_tools(self, req: ProviderRequest | None):
         if req is None or req.func_tool is None:
@@ -1051,7 +1113,7 @@ Returns:
             event, 'ArkSharePeer', payload, send_group_id, send_user_id
         )
 
-    @filter.llm_tool(name='napcat_bot_exit')
+    # napcat_tool: napcat_bot_exit
     async def napcat_bot_exit_tool(
         self,
         event: AstrMessageEvent,
@@ -1066,7 +1128,7 @@ Returns:
         payload: dict = {}
         return await self._call_napcat_api(event, 'bot_exit', payload)
 
-    @filter.llm_tool(name='napcat_can_send_image')
+    # napcat_tool: napcat_can_send_image
     async def napcat_can_send_image_tool(
         self,
         event: AstrMessageEvent,
@@ -1081,7 +1143,7 @@ Returns:
         payload: dict = {}
         return await self._call_napcat_api(event, 'can_send_image', payload)
 
-    @filter.llm_tool(name='napcat_can_send_record')
+    # napcat_tool: napcat_can_send_record
     async def napcat_can_send_record_tool(
         self,
         event: AstrMessageEvent,
@@ -1096,7 +1158,7 @@ Returns:
         payload: dict = {}
         return await self._call_napcat_api(event, 'can_send_record', payload)
 
-    @filter.llm_tool(name='napcat_cancel_group_todo')
+    # napcat_tool: napcat_cancel_group_todo
     async def napcat_cancel_group_todo_tool(
         self,
         event: AstrMessageEvent,
@@ -1121,7 +1183,7 @@ Returns:
             payload['message_seq'] = message_seq
         return await self._call_napcat_api(event, 'cancel_group_todo', payload)
 
-    @filter.llm_tool(name='napcat_cancel_online_file')
+    # napcat_tool: napcat_cancel_online_file
     async def napcat_cancel_online_file_tool(
         self,
         event: AstrMessageEvent,
@@ -1142,7 +1204,7 @@ Returns:
         payload['user_id'] = user_id
         return await self._call_napcat_api(event, 'cancel_online_file', payload)
 
-    @filter.llm_tool(name='napcat_check_url_safely')
+    # napcat_tool: napcat_check_url_safely
     async def napcat_check_url_safely_tool(
         self,
         event: AstrMessageEvent,
@@ -1160,7 +1222,7 @@ Returns:
             payload['url'] = url
         return await self._call_napcat_api(event, 'check_url_safely', payload)
 
-    @filter.llm_tool(name='napcat_clean_cache')
+    # napcat_tool: napcat_clean_cache
     async def napcat_clean_cache_tool(
         self,
         event: AstrMessageEvent,
@@ -1175,7 +1237,7 @@ Returns:
         payload: dict = {}
         return await self._call_napcat_api(event, 'clean_cache', payload)
 
-    @filter.llm_tool(name='napcat_clean_stream_temp_file')
+    # napcat_tool: napcat_clean_stream_temp_file
     async def napcat_clean_stream_temp_file_tool(
         self,
         event: AstrMessageEvent,
@@ -1190,7 +1252,7 @@ Returns:
         payload: dict = {}
         return await self._call_napcat_api(event, 'clean_stream_temp_file', payload)
 
-    @filter.llm_tool(name='napcat_click_inline_keyboard_button')
+    # napcat_tool: napcat_click_inline_keyboard_button
     async def napcat_click_inline_keyboard_button_tool(
         self,
         event: AstrMessageEvent,
@@ -1223,7 +1285,7 @@ Returns:
             payload['msg_seq'] = msg_seq
         return await self._call_napcat_api(event, 'click_inline_keyboard_button', payload)
 
-    @filter.llm_tool(name='napcat_complete_group_todo')
+    # napcat_tool: napcat_complete_group_todo
     async def napcat_complete_group_todo_tool(
         self,
         event: AstrMessageEvent,
@@ -1248,7 +1310,7 @@ Returns:
             payload['message_seq'] = message_seq
         return await self._call_napcat_api(event, 'complete_group_todo', payload)
 
-    @filter.llm_tool(name='napcat_create_collection')
+    # napcat_tool: napcat_create_collection
     async def napcat_create_collection_tool(
         self,
         event: AstrMessageEvent,
@@ -1270,7 +1332,7 @@ Returns:
             payload['rawData'] = rawData
         return await self._call_napcat_api(event, 'create_collection', payload)
 
-    @filter.llm_tool(name='napcat_create_flash_task')
+    # napcat_tool: napcat_create_flash_task
     async def napcat_create_flash_task_tool(
         self,
         event: AstrMessageEvent,
@@ -1296,7 +1358,7 @@ Returns:
             payload['thumb_path'] = thumb_path
         return await self._call_napcat_api(event, 'create_flash_task', payload)
 
-    @filter.llm_tool(name='napcat_create_group_file_folder')
+    # napcat_tool: napcat_create_group_file_folder
     async def napcat_create_group_file_folder_tool(
         self,
         event: AstrMessageEvent,
@@ -1325,7 +1387,7 @@ Returns:
             payload['parent_id'] = parent_id
         return await self._call_napcat_api(event, 'create_group_file_folder', payload)
 
-    @filter.llm_tool(name='napcat_create_guild_role')
+    # napcat_tool: napcat_create_guild_role
     async def napcat_create_guild_role_tool(
         self,
         event: AstrMessageEvent,
@@ -1359,7 +1421,7 @@ Returns:
             payload['initial_users'] = initial_users
         return await self._call_napcat_api(event, 'create_guild_role', payload)
 
-    @filter.llm_tool(name='napcat_del_group_album_media')
+    # napcat_tool: napcat_del_group_album_media
     async def napcat_del_group_album_media_tool(
         self,
         event: AstrMessageEvent,
@@ -1384,7 +1446,7 @@ Returns:
             payload['lloc'] = lloc
         return await self._call_napcat_api(event, 'del_group_album_media', payload)
 
-    @filter.llm_tool(name='napcat_del_group_notice')
+    # napcat_tool: napcat_del_group_notice
     async def napcat_del_group_notice_tool(
         self,
         event: AstrMessageEvent,
@@ -1405,7 +1467,7 @@ Returns:
             payload['notice_id'] = notice_id
         return await self._call_napcat_api(event, '_del_group_notice', payload)
 
-    @filter.llm_tool(name='napcat_delete_essence_msg')
+    # napcat_tool: napcat_delete_essence_msg
     async def napcat_delete_essence_msg_tool(
         self,
         event: AstrMessageEvent,
@@ -1434,7 +1496,7 @@ Returns:
             payload['msg_seq'] = msg_seq
         return await self._call_napcat_api(event, 'delete_essence_msg', payload)
 
-    @filter.llm_tool(name='napcat_delete_friend')
+    # napcat_tool: napcat_delete_friend
     async def napcat_delete_friend_tool(
         self,
         event: AstrMessageEvent,
@@ -1463,7 +1525,7 @@ Returns:
             payload['friend_id'] = friend_id
         return await self._call_napcat_api(event, 'delete_friend', payload)
 
-    @filter.llm_tool(name='napcat_delete_group_file')
+    # napcat_tool: napcat_delete_group_file
     async def napcat_delete_group_file_tool(
         self,
         event: AstrMessageEvent,
@@ -1488,7 +1550,7 @@ Returns:
             payload['busid'] = busid
         return await self._call_napcat_api(event, 'delete_group_file', payload)
 
-    @filter.llm_tool(name='napcat_delete_group_folder')
+    # napcat_tool: napcat_delete_group_folder
     async def napcat_delete_group_folder_tool(
         self,
         event: AstrMessageEvent,
@@ -1513,7 +1575,7 @@ Returns:
             payload['folder'] = folder
         return await self._call_napcat_api(event, 'delete_group_folder', payload)
 
-    @filter.llm_tool(name='napcat_delete_guild_role')
+    # napcat_tool: napcat_delete_guild_role
     async def napcat_delete_guild_role_tool(
         self,
         event: AstrMessageEvent,
@@ -1535,7 +1597,7 @@ Returns:
             payload['role_id'] = role_id
         return await self._call_napcat_api(event, 'delete_guild_role', payload)
 
-    @filter.llm_tool(name='napcat_delete_msg')
+    # napcat_tool: napcat_delete_msg
     async def napcat_delete_msg_tool(
         self,
         event: AstrMessageEvent,
@@ -1552,7 +1614,7 @@ Returns:
         payload['message_id'] = message_id
         return await self._call_napcat_api(event, 'delete_msg', payload)
 
-    @filter.llm_tool(name='napcat_delete_unidirectional_friend')
+    # napcat_tool: napcat_delete_unidirectional_friend
     async def napcat_delete_unidirectional_friend_tool(
         self,
         event: AstrMessageEvent,
@@ -1570,7 +1632,7 @@ Returns:
             payload['user_id'] = user_id
         return await self._call_napcat_api(event, 'delete_unidirectional_friend', payload)
 
-    @filter.llm_tool(name='napcat_do_group_album_comment')
+    # napcat_tool: napcat_do_group_album_comment
     async def napcat_do_group_album_comment_tool(
         self,
         event: AstrMessageEvent,
@@ -1599,7 +1661,7 @@ Returns:
             payload['lloc'] = lloc
         return await self._call_napcat_api(event, 'do_group_album_comment', payload)
 
-    @filter.llm_tool(name='napcat_dot_get_word_slices')
+    # napcat_tool: napcat_dot_get_word_slices
     async def napcat_dot_get_word_slices_tool(
         self,
         event: AstrMessageEvent,
@@ -1617,7 +1679,7 @@ Returns:
             payload['content'] = content
         return await self._call_napcat_api(event, '.get_word_slices', payload)
 
-    @filter.llm_tool(name='napcat_dot_handle_quick_operation')
+    # napcat_tool: napcat_dot_handle_quick_operation
     async def napcat_dot_handle_quick_operation_tool(
         self,
         event: AstrMessageEvent,
@@ -1639,7 +1701,7 @@ Returns:
             payload['operation'] = operation
         return await self._call_napcat_api(event, '.handle_quick_operation', payload)
 
-    @filter.llm_tool(name='napcat_dot_ocr_image')
+    # napcat_tool: napcat_dot_ocr_image
     async def napcat_dot_ocr_image_tool(
         self,
         event: AstrMessageEvent,
@@ -1657,7 +1719,7 @@ Returns:
             payload['image'] = image
         return await self._call_napcat_api(event, '.ocr_image', payload)
 
-    @filter.llm_tool(name='napcat_download_file')
+    # napcat_tool: napcat_download_file
     async def napcat_download_file_tool(
         self,
         event: AstrMessageEvent,
@@ -1691,7 +1753,7 @@ Returns:
             payload['url'] = url
         return await self._call_napcat_api(event, 'download_file', payload)
 
-    @filter.llm_tool(name='napcat_download_file_image_stream')
+    # napcat_tool: napcat_download_file_image_stream
     async def napcat_download_file_image_stream_tool(
         self,
         event: AstrMessageEvent,
@@ -1717,7 +1779,7 @@ Returns:
             payload['file_id'] = file_id
         return await self._call_napcat_api(event, 'download_file_image_stream', payload)
 
-    @filter.llm_tool(name='napcat_download_file_record_stream')
+    # napcat_tool: napcat_download_file_record_stream
     async def napcat_download_file_record_stream_tool(
         self,
         event: AstrMessageEvent,
@@ -1747,7 +1809,7 @@ Returns:
             payload['out_format'] = out_format
         return await self._call_napcat_api(event, 'download_file_record_stream', payload)
 
-    @filter.llm_tool(name='napcat_download_file_stream')
+    # napcat_tool: napcat_download_file_stream
     async def napcat_download_file_stream_tool(
         self,
         event: AstrMessageEvent,
@@ -1773,7 +1835,7 @@ Returns:
             payload['file_id'] = file_id
         return await self._call_napcat_api(event, 'download_file_stream', payload)
 
-    @filter.llm_tool(name='napcat_download_fileset')
+    # napcat_tool: napcat_download_fileset
     async def napcat_download_fileset_tool(
         self,
         event: AstrMessageEvent,
@@ -1791,7 +1853,7 @@ Returns:
             payload['fileset_id'] = fileset_id
         return await self._call_napcat_api(event, 'download_fileset', payload)
 
-    @filter.llm_tool(name='napcat_fetch_custom_face')
+    # napcat_tool: napcat_fetch_custom_face
     async def napcat_fetch_custom_face_tool(
         self,
         event: AstrMessageEvent,
@@ -1809,7 +1871,7 @@ Returns:
             payload['count'] = count
         return await self._call_napcat_api(event, 'fetch_custom_face', payload)
 
-    @filter.llm_tool(name='napcat_fetch_emoji_like')
+    # napcat_tool: napcat_fetch_emoji_like
     async def napcat_fetch_emoji_like_tool(
         self,
         event: AstrMessageEvent,
@@ -1842,7 +1904,7 @@ Returns:
         payload['message_id'] = message_id
         return await self._call_napcat_api(event, 'fetch_emoji_like', payload)
 
-    @filter.llm_tool(name='napcat_forward_single_msg')
+    # napcat_tool: napcat_forward_single_msg
     async def napcat_forward_single_msg_tool(
         self,
         event: AstrMessageEvent,
@@ -1962,7 +2024,7 @@ Returns:
             payload['group_id'] = group_id
         return await self._call_napcat_api(event, 'friend_poke', payload)
 
-    @filter.llm_tool(name='napcat_get_ai_characters')
+    # napcat_tool: napcat_get_ai_characters
     async def napcat_get_ai_characters_tool(
         self,
         event: AstrMessageEvent,
@@ -1983,7 +2045,7 @@ Returns:
         payload['group_id'] = group_id
         return await self._call_napcat_api(event, 'get_ai_characters', payload)
 
-    @filter.llm_tool(name='napcat_get_ai_record')
+    # napcat_tool: napcat_get_ai_record
     async def napcat_get_ai_record_tool(
         self,
         event: AstrMessageEvent,
@@ -2008,7 +2070,7 @@ Returns:
             payload['text'] = text
         return await self._call_napcat_api(event, 'get_ai_record', payload)
 
-    @filter.llm_tool(name='napcat_get_clientkey')
+    # napcat_tool: napcat_get_clientkey
     async def napcat_get_clientkey_tool(
         self,
         event: AstrMessageEvent,
@@ -2023,7 +2085,7 @@ Returns:
         payload: dict = {}
         return await self._call_napcat_api(event, 'get_clientkey', payload)
 
-    @filter.llm_tool(name='napcat_get_collection_list')
+    # napcat_tool: napcat_get_collection_list
     async def napcat_get_collection_list_tool(
         self,
         event: AstrMessageEvent,
@@ -2045,7 +2107,7 @@ Returns:
             payload['count'] = count
         return await self._call_napcat_api(event, 'get_collection_list', payload)
 
-    @filter.llm_tool(name='napcat_get_cookies')
+    # napcat_tool: napcat_get_cookies
     async def napcat_get_cookies_tool(
         self,
         event: AstrMessageEvent,
@@ -2063,7 +2125,7 @@ Returns:
             payload['domain'] = domain
         return await self._call_napcat_api(event, 'get_cookies', payload)
 
-    @filter.llm_tool(name='napcat_get_credentials')
+    # napcat_tool: napcat_get_credentials
     async def napcat_get_credentials_tool(
         self,
         event: AstrMessageEvent,
@@ -2081,7 +2143,7 @@ Returns:
             payload['domain'] = domain
         return await self._call_napcat_api(event, 'get_credentials', payload)
 
-    @filter.llm_tool(name='napcat_get_csrf_token')
+    # napcat_tool: napcat_get_csrf_token
     async def napcat_get_csrf_token_tool(
         self,
         event: AstrMessageEvent,
@@ -2096,7 +2158,7 @@ Returns:
         payload: dict = {}
         return await self._call_napcat_api(event, 'get_csrf_token', payload)
 
-    @filter.llm_tool(name='napcat_get_doubt_friends_add_request')
+    # napcat_tool: napcat_get_doubt_friends_add_request
     async def napcat_get_doubt_friends_add_request_tool(
         self,
         event: AstrMessageEvent,
@@ -2114,7 +2176,7 @@ Returns:
             payload['count'] = count
         return await self._call_napcat_api(event, 'get_doubt_friends_add_request', payload)
 
-    @filter.llm_tool(name='napcat_get_emoji_likes')
+    # napcat_tool: napcat_get_emoji_likes
     async def napcat_get_emoji_likes_tool(
         self,
         event: AstrMessageEvent,
@@ -2147,7 +2209,7 @@ Returns:
             payload['group_id'] = group_id
         return await self._call_napcat_api(event, 'get_emoji_likes', payload)
 
-    @filter.llm_tool(name='napcat_get_essence_msg_list')
+    # napcat_tool: napcat_get_essence_msg_list
     async def napcat_get_essence_msg_list_tool(
         self,
         event: AstrMessageEvent,
@@ -2164,7 +2226,7 @@ Returns:
         payload['group_id'] = group_id
         return await self._call_napcat_api(event, 'get_essence_msg_list', payload)
 
-    @filter.llm_tool(name='napcat_get_file')
+    # napcat_tool: napcat_get_file
     async def napcat_get_file_tool(
         self,
         event: AstrMessageEvent,
@@ -2186,7 +2248,7 @@ Returns:
             payload['file_id'] = file_id
         return await self._call_napcat_api(event, 'get_file', payload)
 
-    @filter.llm_tool(name='napcat_get_fileset_id')
+    # napcat_tool: napcat_get_fileset_id
     async def napcat_get_fileset_id_tool(
         self,
         event: AstrMessageEvent,
@@ -2204,7 +2266,7 @@ Returns:
             payload['share_code'] = share_code
         return await self._call_napcat_api(event, 'get_fileset_id', payload)
 
-    @filter.llm_tool(name='napcat_get_fileset_info')
+    # napcat_tool: napcat_get_fileset_info
     async def napcat_get_fileset_info_tool(
         self,
         event: AstrMessageEvent,
@@ -2222,7 +2284,7 @@ Returns:
             payload['fileset_id'] = fileset_id
         return await self._call_napcat_api(event, 'get_fileset_info', payload)
 
-    @filter.llm_tool(name='napcat_get_flash_file_list')
+    # napcat_tool: napcat_get_flash_file_list
     async def napcat_get_flash_file_list_tool(
         self,
         event: AstrMessageEvent,
@@ -2240,7 +2302,7 @@ Returns:
             payload['fileset_id'] = fileset_id
         return await self._call_napcat_api(event, 'get_flash_file_list', payload)
 
-    @filter.llm_tool(name='napcat_get_flash_file_url')
+    # napcat_tool: napcat_get_flash_file_url
     async def napcat_get_flash_file_url_tool(
         self,
         event: AstrMessageEvent,
@@ -2266,7 +2328,7 @@ Returns:
             payload['file_name'] = file_name
         return await self._call_napcat_api(event, 'get_flash_file_url', payload)
 
-    @filter.llm_tool(name='napcat_get_forward_msg')
+    # napcat_tool: napcat_get_forward_msg
     async def napcat_get_forward_msg_tool(
         self,
         event: AstrMessageEvent,
@@ -2287,7 +2349,7 @@ Returns:
             payload['id'] = id
         return await self._call_napcat_api(event, 'get_forward_msg', payload)
 
-    @filter.llm_tool(name='napcat_get_friend_list')
+    # napcat_tool: napcat_get_friend_list
     async def napcat_get_friend_list_tool(
         self,
         event: AstrMessageEvent,
@@ -2305,7 +2367,7 @@ Returns:
             payload['no_cache'] = no_cache
         return await self._call_napcat_api(event, 'get_friend_list', payload)
 
-    @filter.llm_tool(name='napcat_get_friend_msg_history')
+    # napcat_tool: napcat_get_friend_msg_history
     async def napcat_get_friend_msg_history_tool(
         self,
         event: AstrMessageEvent,
@@ -2350,7 +2412,7 @@ Returns:
             payload['message_seq'] = message_seq
         return await self._call_napcat_api(event, 'get_friend_msg_history', payload)
 
-    @filter.llm_tool(name='napcat_get_friends_with_category')
+    # napcat_tool: napcat_get_friends_with_category
     async def napcat_get_friends_with_category_tool(
         self,
         event: AstrMessageEvent,
@@ -2365,7 +2427,7 @@ Returns:
         payload: dict = {}
         return await self._call_napcat_api(event, 'get_friends_with_category', payload)
 
-    @filter.llm_tool(name='napcat_get_group_album_media_list')
+    # napcat_tool: napcat_get_group_album_media_list
     async def napcat_get_group_album_media_list_tool(
         self,
         event: AstrMessageEvent,
@@ -2390,7 +2452,7 @@ Returns:
         payload['group_id'] = group_id
         return await self._call_napcat_api(event, 'get_group_album_media_list', payload)
 
-    @filter.llm_tool(name='napcat_get_group_at_all_remain')
+    # napcat_tool: napcat_get_group_at_all_remain
     async def napcat_get_group_at_all_remain_tool(
         self,
         event: AstrMessageEvent,
@@ -2407,7 +2469,7 @@ Returns:
         payload['group_id'] = group_id
         return await self._call_napcat_api(event, 'get_group_at_all_remain', payload)
 
-    @filter.llm_tool(name='napcat_get_group_detail_info')
+    # napcat_tool: napcat_get_group_detail_info
     async def napcat_get_group_detail_info_tool(
         self,
         event: AstrMessageEvent,
@@ -2424,7 +2486,7 @@ Returns:
         payload['group_id'] = group_id
         return await self._call_napcat_api(event, 'get_group_detail_info', payload)
 
-    @filter.llm_tool(name='napcat_get_group_file_system_info')
+    # napcat_tool: napcat_get_group_file_system_info
     async def napcat_get_group_file_system_info_tool(
         self,
         event: AstrMessageEvent,
@@ -2441,7 +2503,7 @@ Returns:
         payload['group_id'] = group_id
         return await self._call_napcat_api(event, 'get_group_file_system_info', payload)
 
-    @filter.llm_tool(name='napcat_get_group_file_url')
+    # napcat_tool: napcat_get_group_file_url
     async def napcat_get_group_file_url_tool(
         self,
         event: AstrMessageEvent,
@@ -2466,7 +2528,7 @@ Returns:
             payload['busid'] = busid
         return await self._call_napcat_api(event, 'get_group_file_url', payload)
 
-    @filter.llm_tool(name='napcat_get_group_files_by_folder')
+    # napcat_tool: napcat_get_group_files_by_folder
     async def napcat_get_group_files_by_folder_tool(
         self,
         event: AstrMessageEvent,
@@ -2495,7 +2557,7 @@ Returns:
             payload['folder_id'] = folder_id
         return await self._call_napcat_api(event, 'get_group_files_by_folder', payload)
 
-    @filter.llm_tool(name='napcat_get_group_honor_info')
+    # napcat_tool: napcat_get_group_honor_info
     async def napcat_get_group_honor_info_tool(
         self,
         event: AstrMessageEvent,
@@ -2515,7 +2577,7 @@ Returns:
             payload['type'] = type
         return await self._call_napcat_api(event, 'get_group_honor_info', payload)
 
-    @filter.llm_tool(name='napcat_get_group_ignore_add_request')
+    # napcat_tool: napcat_get_group_ignore_add_request
     async def napcat_get_group_ignore_add_request_tool(
         self,
         event: AstrMessageEvent,
@@ -2530,7 +2592,7 @@ Returns:
         payload: dict = {}
         return await self._call_napcat_api(event, 'get_group_ignore_add_request', payload)
 
-    @filter.llm_tool(name='napcat_get_group_ignored_notifies')
+    # napcat_tool: napcat_get_group_ignored_notifies
     async def napcat_get_group_ignored_notifies_tool(
         self,
         event: AstrMessageEvent,
@@ -2545,7 +2607,7 @@ Returns:
         payload: dict = {}
         return await self._call_napcat_api(event, 'get_group_ignored_notifies', payload)
 
-    @filter.llm_tool(name='napcat_get_group_info')
+    # napcat_tool: napcat_get_group_info
     async def napcat_get_group_info_tool(
         self,
         event: AstrMessageEvent,
@@ -2566,7 +2628,7 @@ Returns:
             payload['no_cache'] = no_cache
         return await self._call_napcat_api(event, 'get_group_info', payload)
 
-    @filter.llm_tool(name='napcat_get_group_info_ex')
+    # napcat_tool: napcat_get_group_info_ex
     async def napcat_get_group_info_ex_tool(
         self,
         event: AstrMessageEvent,
@@ -2583,7 +2645,7 @@ Returns:
         payload['group_id'] = group_id
         return await self._call_napcat_api(event, 'get_group_info_ex', payload)
 
-    @filter.llm_tool(name='napcat_get_group_list')
+    # napcat_tool: napcat_get_group_list
     async def napcat_get_group_list_tool(
         self,
         event: AstrMessageEvent,
@@ -2601,7 +2663,7 @@ Returns:
             payload['no_cache'] = no_cache
         return await self._call_napcat_api(event, 'get_group_list', payload)
 
-    @filter.llm_tool(name='napcat_get_group_member_info')
+    # napcat_tool: napcat_get_group_member_info
     async def napcat_get_group_member_info_tool(
         self,
         event: AstrMessageEvent,
@@ -2625,7 +2687,7 @@ Returns:
         payload['user_id'] = user_id
         return await self._call_napcat_api(event, 'get_group_member_info', payload)
 
-    @filter.llm_tool(name='napcat_get_group_member_list')
+    # napcat_tool: napcat_get_group_member_list
     async def napcat_get_group_member_list_tool(
         self,
         event: AstrMessageEvent,
@@ -2646,7 +2708,7 @@ Returns:
             payload['no_cache'] = no_cache
         return await self._call_napcat_api(event, 'get_group_member_list', payload)
 
-    @filter.llm_tool(name='napcat_get_group_msg_history')
+    # napcat_tool: napcat_get_group_msg_history
     async def napcat_get_group_msg_history_tool(
         self,
         event: AstrMessageEvent,
@@ -2691,7 +2753,7 @@ Returns:
             payload['message_seq'] = message_seq
         return await self._call_napcat_api(event, 'get_group_msg_history', payload)
 
-    @filter.llm_tool(name='napcat_get_group_notice')
+    # napcat_tool: napcat_get_group_notice
     async def napcat_get_group_notice_tool(
         self,
         event: AstrMessageEvent,
@@ -2708,7 +2770,7 @@ Returns:
         payload['group_id'] = group_id
         return await self._call_napcat_api(event, '_get_group_notice', payload)
 
-    @filter.llm_tool(name='napcat_get_group_root_files')
+    # napcat_tool: napcat_get_group_root_files
     async def napcat_get_group_root_files_tool(
         self,
         event: AstrMessageEvent,
@@ -2729,7 +2791,7 @@ Returns:
         payload['group_id'] = group_id
         return await self._call_napcat_api(event, 'get_group_root_files', payload)
 
-    @filter.llm_tool(name='napcat_get_group_shut_list')
+    # napcat_tool: napcat_get_group_shut_list
     async def napcat_get_group_shut_list_tool(
         self,
         event: AstrMessageEvent,
@@ -2746,7 +2808,7 @@ Returns:
         payload['group_id'] = group_id
         return await self._call_napcat_api(event, 'get_group_shut_list', payload)
 
-    @filter.llm_tool(name='napcat_get_group_system_msg')
+    # napcat_tool: napcat_get_group_system_msg
     async def napcat_get_group_system_msg_tool(
         self,
         event: AstrMessageEvent,
@@ -2764,7 +2826,7 @@ Returns:
             payload['count'] = count
         return await self._call_napcat_api(event, 'get_group_system_msg', payload)
 
-    @filter.llm_tool(name='napcat_get_guild_channel_list')
+    # napcat_tool: napcat_get_guild_channel_list
     async def napcat_get_guild_channel_list_tool(
         self,
         event: AstrMessageEvent,
@@ -2786,7 +2848,7 @@ Returns:
             payload['no_cache'] = no_cache
         return await self._call_napcat_api(event, 'get_guild_channel_list', payload)
 
-    @filter.llm_tool(name='napcat_get_guild_list')
+    # napcat_tool: napcat_get_guild_list
     async def napcat_get_guild_list_tool(
         self,
         event: AstrMessageEvent,
@@ -2801,7 +2863,7 @@ Returns:
         payload: dict = {}
         return await self._call_napcat_api(event, 'get_guild_list', payload)
 
-    @filter.llm_tool(name='napcat_get_guild_member_list')
+    # napcat_tool: napcat_get_guild_member_list
     async def napcat_get_guild_member_list_tool(
         self,
         event: AstrMessageEvent,
@@ -2823,7 +2885,7 @@ Returns:
             payload['next_token'] = next_token
         return await self._call_napcat_api(event, 'get_guild_member_list', payload)
 
-    @filter.llm_tool(name='napcat_get_guild_member_profile')
+    # napcat_tool: napcat_get_guild_member_profile
     async def napcat_get_guild_member_profile_tool(
         self,
         event: AstrMessageEvent,
@@ -2845,7 +2907,7 @@ Returns:
             payload['user_id'] = user_id
         return await self._call_napcat_api(event, 'get_guild_member_profile', payload)
 
-    @filter.llm_tool(name='napcat_get_guild_meta_by_guest')
+    # napcat_tool: napcat_get_guild_meta_by_guest
     async def napcat_get_guild_meta_by_guest_tool(
         self,
         event: AstrMessageEvent,
@@ -2863,7 +2925,7 @@ Returns:
             payload['guild_id'] = guild_id
         return await self._call_napcat_api(event, 'get_guild_meta_by_guest', payload)
 
-    @filter.llm_tool(name='napcat_get_guild_msg')
+    # napcat_tool: napcat_get_guild_msg
     async def napcat_get_guild_msg_tool(
         self,
         event: AstrMessageEvent,
@@ -2884,7 +2946,7 @@ Returns:
             payload['no_cache'] = no_cache
         return await self._call_napcat_api(event, 'get_guild_msg', payload)
 
-    @filter.llm_tool(name='napcat_get_guild_roles')
+    # napcat_tool: napcat_get_guild_roles
     async def napcat_get_guild_roles_tool(
         self,
         event: AstrMessageEvent,
@@ -2902,7 +2964,7 @@ Returns:
             payload['guild_id'] = guild_id
         return await self._call_napcat_api(event, 'get_guild_roles', payload)
 
-    @filter.llm_tool(name='napcat_get_guild_service_profile')
+    # napcat_tool: napcat_get_guild_service_profile
     async def napcat_get_guild_service_profile_tool(
         self,
         event: AstrMessageEvent,
@@ -2917,7 +2979,7 @@ Returns:
         payload: dict = {}
         return await self._call_napcat_api(event, 'get_guild_service_profile', payload)
 
-    @filter.llm_tool(name='napcat_get_image')
+    # napcat_tool: napcat_get_image
     async def napcat_get_image_tool(
         self,
         event: AstrMessageEvent,
@@ -2939,7 +3001,7 @@ Returns:
             payload['file_id'] = file_id
         return await self._call_napcat_api(event, 'get_image', payload)
 
-    @filter.llm_tool(name='napcat_get_login_info')
+    # napcat_tool: napcat_get_login_info
     async def napcat_get_login_info_tool(
         self,
         event: AstrMessageEvent,
@@ -2954,7 +3016,7 @@ Returns:
         payload: dict = {}
         return await self._call_napcat_api(event, 'get_login_info', payload)
 
-    # @filter.llm_tool(name='napcat_get_mini_app_ark')
+    # disabled napcat_tool: napcat_get_mini_app_ark
     # async def napcat_get_mini_app_ark_tool(
     #     self,
     #     event: AstrMessageEvent,
@@ -2969,7 +3031,7 @@ Returns:
     #     payload: dict = {}
     #     return await self._call_napcat_api(event, 'get_mini_app_ark', payload)
 
-    @filter.llm_tool(name='napcat_get_model_show')
+    # napcat_tool: napcat_get_model_show
     async def napcat_get_model_show_tool(
         self,
         event: AstrMessageEvent,
@@ -2987,7 +3049,7 @@ Returns:
             payload['model'] = model
         return await self._call_napcat_api(event, '_get_model_show', payload)
 
-    @filter.llm_tool(name='napcat_get_msg')
+    # napcat_tool: napcat_get_msg
     async def napcat_get_msg_tool(
         self,
         event: AstrMessageEvent,
@@ -3004,7 +3066,7 @@ Returns:
         payload['message_id'] = message_id
         return await self._call_napcat_api(event, 'get_msg', payload)
 
-    @filter.llm_tool(name='napcat_get_online_clients')
+    # napcat_tool: napcat_get_online_clients
     async def napcat_get_online_clients_tool(
         self,
         event: AstrMessageEvent,
@@ -3022,7 +3084,7 @@ Returns:
             payload['no_cache'] = no_cache
         return await self._call_napcat_api(event, 'get_online_clients', payload)
 
-    @filter.llm_tool(name='napcat_get_online_file_msg')
+    # napcat_tool: napcat_get_online_file_msg
     async def napcat_get_online_file_msg_tool(
         self,
         event: AstrMessageEvent,
@@ -3039,7 +3101,7 @@ Returns:
         payload['user_id'] = user_id
         return await self._call_napcat_api(event, 'get_online_file_msg', payload)
 
-    @filter.llm_tool(name='napcat_get_private_file_url')
+    # napcat_tool: napcat_get_private_file_url
     async def napcat_get_private_file_url_tool(
         self,
         event: AstrMessageEvent,
@@ -3057,7 +3119,7 @@ Returns:
             payload['file_id'] = file_id
         return await self._call_napcat_api(event, 'get_private_file_url', payload)
 
-    @filter.llm_tool(name='napcat_get_profile_like')
+    # napcat_tool: napcat_get_profile_like
     async def napcat_get_profile_like_tool(
         self,
         event: AstrMessageEvent,
@@ -3083,7 +3145,7 @@ Returns:
             payload['user_id'] = user_id
         return await self._call_napcat_api(event, 'get_profile_like', payload)
 
-    @filter.llm_tool(name='napcat_get_qun_album_list')
+    # napcat_tool: napcat_get_qun_album_list
     async def napcat_get_qun_album_list_tool(
         self,
         event: AstrMessageEvent,
@@ -3104,7 +3166,7 @@ Returns:
             payload['attach_info'] = attach_info
         return await self._call_napcat_api(event, 'get_qun_album_list', payload)
 
-    @filter.llm_tool(name='napcat_get_recent_contact')
+    # napcat_tool: napcat_get_recent_contact
     async def napcat_get_recent_contact_tool(
         self,
         event: AstrMessageEvent,
@@ -3122,7 +3184,7 @@ Returns:
             payload['count'] = count
         return await self._call_napcat_api(event, 'get_recent_contact', payload)
 
-    @filter.llm_tool(name='napcat_get_record')
+    # napcat_tool: napcat_get_record
     async def napcat_get_record_tool(
         self,
         event: AstrMessageEvent,
@@ -3148,7 +3210,7 @@ Returns:
             payload['file_id'] = file_id
         return await self._call_napcat_api(event, 'get_record', payload)
 
-    @filter.llm_tool(name='napcat_get_rkey')
+    # napcat_tool: napcat_get_rkey
     async def napcat_get_rkey_tool(
         self,
         event: AstrMessageEvent,
@@ -3163,7 +3225,7 @@ Returns:
         payload: dict = {}
         return await self._call_napcat_api(event, 'get_rkey', payload)
 
-    @filter.llm_tool(name='napcat_get_rkey_server')
+    # napcat_tool: napcat_get_rkey_server
     async def napcat_get_rkey_server_tool(
         self,
         event: AstrMessageEvent,
@@ -3192,7 +3254,7 @@ Returns:
         payload: dict = {}
         return await self._call_napcat_api(event, 'get_robot_uin_range', payload)
 
-    @filter.llm_tool(name='napcat_get_share_link')
+    # napcat_tool: napcat_get_share_link
     async def napcat_get_share_link_tool(
         self,
         event: AstrMessageEvent,
@@ -3210,7 +3272,7 @@ Returns:
             payload['fileset_id'] = fileset_id
         return await self._call_napcat_api(event, 'get_share_link', payload)
 
-    @filter.llm_tool(name='napcat_get_status')
+    # napcat_tool: napcat_get_status
     async def napcat_get_status_tool(
         self,
         event: AstrMessageEvent,
@@ -3225,7 +3287,7 @@ Returns:
         payload: dict = {}
         return await self._call_napcat_api(event, 'get_status', payload)
 
-    @filter.llm_tool(name='napcat_get_stranger_info')
+    # napcat_tool: napcat_get_stranger_info
     async def napcat_get_stranger_info_tool(
         self,
         event: AstrMessageEvent,
@@ -3246,7 +3308,7 @@ Returns:
         payload['user_id'] = user_id
         return await self._call_napcat_api(event, 'get_stranger_info', payload)
 
-    @filter.llm_tool(name='napcat_get_topic_channel_feeds')
+    # napcat_tool: napcat_get_topic_channel_feeds
     async def napcat_get_topic_channel_feeds_tool(
         self,
         event: AstrMessageEvent,
@@ -3268,7 +3330,7 @@ Returns:
             payload['guild_id'] = guild_id
         return await self._call_napcat_api(event, 'get_topic_channel_feeds', payload)
 
-    @filter.llm_tool(name='napcat_get_unidirectional_friend_list')
+    # napcat_tool: napcat_get_unidirectional_friend_list
     async def napcat_get_unidirectional_friend_list_tool(
         self,
         event: AstrMessageEvent,
@@ -3283,7 +3345,7 @@ Returns:
         payload: dict = {}
         return await self._call_napcat_api(event, 'get_unidirectional_friend_list', payload)
 
-    @filter.llm_tool(name='napcat_get_version_info')
+    # napcat_tool: napcat_get_version_info
     async def napcat_get_version_info_tool(
         self,
         event: AstrMessageEvent,
@@ -3321,7 +3383,7 @@ Returns:
         payload['user_id'] = user_id
         return await self._call_napcat_api(event, 'group_poke', payload)
 
-    @filter.llm_tool(name='napcat_mark_all_as_read')
+    # napcat_tool: napcat_mark_all_as_read
     async def napcat_mark_all_as_read_tool(
         self,
         event: AstrMessageEvent,
@@ -3360,7 +3422,7 @@ Returns:
             payload['user_id'] = user_id
         return await self._call_napcat_api(event, 'mark_group_msg_as_read', payload)
 
-    @filter.llm_tool(name='napcat_mark_msg_as_read')
+    # napcat_tool: napcat_mark_msg_as_read
     async def napcat_mark_msg_as_read_tool(
         self,
         event: AstrMessageEvent,
@@ -3410,7 +3472,7 @@ Returns:
             payload['message_id'] = message_id
         return await self._call_napcat_api(event, 'mark_private_msg_as_read', payload)
 
-    @filter.llm_tool(name='napcat_move_group_file')
+    # napcat_tool: napcat_move_group_file
     async def napcat_move_group_file_tool(
         self,
         event: AstrMessageEvent,
@@ -3467,7 +3529,7 @@ Returns:
         payload: dict = {}
         return await self._call_napcat_api(event, 'nc_get_rkey', payload)
 
-    @filter.llm_tool(name='napcat_nc_get_user_status')
+    # napcat_tool: napcat_nc_get_user_status
     async def napcat_nc_get_user_status_tool(
         self,
         event: AstrMessageEvent,
@@ -3484,7 +3546,7 @@ Returns:
         payload['user_id'] = user_id
         return await self._call_napcat_api(event, 'nc_get_user_status', payload)
 
-    @filter.llm_tool(name='napcat_ocr_image')
+    # napcat_tool: napcat_ocr_image
     async def napcat_ocr_image_tool(
         self,
         event: AstrMessageEvent,
@@ -3502,7 +3564,7 @@ Returns:
             payload['image'] = image
         return await self._call_napcat_api(event, 'ocr_image', payload)
 
-    @filter.llm_tool(name='napcat_qidian_get_account_info')
+    # napcat_tool: napcat_qidian_get_account_info
     async def napcat_qidian_get_account_info_tool(
         self,
         event: AstrMessageEvent,
@@ -3517,7 +3579,7 @@ Returns:
         payload: dict = {}
         return await self._call_napcat_api(event, 'qidian_get_account_info', payload)
 
-    @filter.llm_tool(name='napcat_receive_online_file')
+    # napcat_tool: napcat_receive_online_file
     async def napcat_receive_online_file_tool(
         self,
         event: AstrMessageEvent,
@@ -3542,7 +3604,7 @@ Returns:
         payload['user_id'] = user_id
         return await self._call_napcat_api(event, 'receive_online_file', payload)
 
-    @filter.llm_tool(name='napcat_refuse_online_file')
+    # napcat_tool: napcat_refuse_online_file
     async def napcat_refuse_online_file_tool(
         self,
         event: AstrMessageEvent,
@@ -3584,7 +3646,7 @@ Returns:
             payload['file'] = file
         return await self._call_napcat_api(event, 'reload_event_filter', payload)
 
-    @filter.llm_tool(name='napcat_rename_group_file')
+    # napcat_tool: napcat_rename_group_file
     async def napcat_rename_group_file_tool(
         self,
         event: AstrMessageEvent,
@@ -3613,7 +3675,7 @@ Returns:
             payload['new_name'] = new_name
         return await self._call_napcat_api(event, 'rename_group_file', payload)
 
-    @filter.llm_tool(name='napcat_send_ark_share')
+    # napcat_tool: napcat_send_ark_share
     async def napcat_send_ark_share_tool(
         self,
         event: AstrMessageEvent,
@@ -3645,7 +3707,7 @@ Returns:
             event, 'send_ark_share', payload, send_group_id, send_user_id
         )
 
-    @filter.llm_tool(name='napcat_send_flash_msg')
+    # napcat_tool: napcat_send_flash_msg
     async def napcat_send_flash_msg_tool(
         self,
         event: AstrMessageEvent,
@@ -3671,7 +3733,7 @@ Returns:
             payload['user_id'] = user_id
         return await self._call_napcat_api(event, 'send_flash_msg', payload)
 
-    @filter.llm_tool(name='napcat_send_forward_msg')
+    # napcat_tool: napcat_send_forward_msg
     async def napcat_send_forward_msg_tool(
         self,
         event: AstrMessageEvent,
@@ -3729,7 +3791,7 @@ Returns:
             payload['user_id'] = user_id
         return await self._call_napcat_api(event, 'send_forward_msg', payload)
 
-    @filter.llm_tool(name='napcat_send_group_ai_record')
+    # napcat_tool: napcat_send_group_ai_record
     async def napcat_send_group_ai_record_tool(
         self,
         event: AstrMessageEvent,
@@ -3754,7 +3816,7 @@ Returns:
             payload['text'] = text
         return await self._call_napcat_api(event, 'send_group_ai_record', payload)
 
-    @filter.llm_tool(name='napcat_send_group_ark_share')
+    # napcat_tool: napcat_send_group_ark_share
     async def napcat_send_group_ark_share_tool(
         self,
         event: AstrMessageEvent,
@@ -3885,7 +3947,7 @@ Returns:
             payload['user_id'] = user_id
         return await self._call_napcat_api(event, 'send_group_msg', payload)
 
-    @filter.llm_tool(name='napcat_send_group_notice')
+    # napcat_tool: napcat_send_group_notice
     async def napcat_send_group_notice_tool(
         self,
         event: AstrMessageEvent,
@@ -3930,7 +3992,7 @@ Returns:
             payload['image'] = image
         return await self._call_napcat_api(event, '_send_group_notice', payload)
 
-    @filter.llm_tool(name='napcat_send_group_sign')
+    # napcat_tool: napcat_send_group_sign
     async def napcat_send_group_sign_tool(
         self,
         event: AstrMessageEvent,
@@ -3947,7 +4009,7 @@ Returns:
         payload['group_id'] = group_id
         return await self._call_napcat_api(event, 'send_group_sign', payload)
 
-    @filter.llm_tool(name='napcat_send_guild_channel_msg')
+    # napcat_tool: napcat_send_guild_channel_msg
     async def napcat_send_guild_channel_msg_tool(
         self,
         event: AstrMessageEvent,
@@ -3973,7 +4035,7 @@ Returns:
             payload['message'] = message
         return await self._call_napcat_api(event, 'send_guild_channel_msg', payload)
 
-    @filter.llm_tool(name='napcat_send_like')
+    # napcat_tool: napcat_send_like
     async def napcat_send_like_tool(
         self,
         event: AstrMessageEvent,
@@ -3994,7 +4056,7 @@ Returns:
         payload['user_id'] = user_id
         return await self._call_napcat_api(event, 'send_like', payload)
 
-    @filter.llm_tool(name='napcat_send_msg')
+    # napcat_tool: napcat_send_msg
     async def napcat_send_msg_tool(
         self,
         event: AstrMessageEvent,
@@ -4046,7 +4108,7 @@ Returns:
             payload['timeout'] = timeout
         return await self._call_napcat_api(event, 'send_msg', payload)
 
-    @filter.llm_tool(name='napcat_send_online_file')
+    # napcat_tool: napcat_send_online_file
     async def napcat_send_online_file_tool(
         self,
         event: AstrMessageEvent,
@@ -4071,7 +4133,7 @@ Returns:
             payload['file_name'] = file_name
         return await self._call_napcat_api(event, 'send_online_file', payload)
 
-    @filter.llm_tool(name='napcat_send_online_folder')
+    # napcat_tool: napcat_send_online_folder
     async def napcat_send_online_folder_tool(
         self,
         event: AstrMessageEvent,
@@ -4121,7 +4183,7 @@ Returns:
             payload['rsp'] = rsp
         return await self._call_napcat_api(event, 'send_packet', payload)
 
-    @filter.llm_tool(name='napcat_send_poke')
+    # napcat_tool: napcat_send_poke
     async def napcat_send_poke_tool(
         self,
         event: AstrMessageEvent,
@@ -4255,7 +4317,7 @@ Returns:
             payload['timeout'] = timeout
         return await self._call_napcat_api(event, 'send_private_msg', payload)
 
-    @filter.llm_tool(name='napcat_set_diy_online_status')
+    # napcat_tool: napcat_set_diy_online_status
     async def napcat_set_diy_online_status_tool(
         self,
         event: AstrMessageEvent,
@@ -4281,7 +4343,7 @@ Returns:
             payload['wording'] = wording
         return await self._call_napcat_api(event, 'set_diy_online_status', payload)
 
-    @filter.llm_tool(name='napcat_set_doubt_friends_add_request')
+    # napcat_tool: napcat_set_doubt_friends_add_request
     async def napcat_set_doubt_friends_add_request_tool(
         self,
         event: AstrMessageEvent,
@@ -4303,7 +4365,7 @@ Returns:
             payload['flag'] = flag
         return await self._call_napcat_api(event, 'set_doubt_friends_add_request', payload)
 
-    @filter.llm_tool(name='napcat_set_essence_msg')
+    # napcat_tool: napcat_set_essence_msg
     async def napcat_set_essence_msg_tool(
         self,
         event: AstrMessageEvent,
@@ -4320,7 +4382,7 @@ Returns:
         payload['message_id'] = message_id
         return await self._call_napcat_api(event, 'set_essence_msg', payload)
 
-    @filter.llm_tool(name='napcat_set_friend_add_request')
+    # napcat_tool: napcat_set_friend_add_request
     async def napcat_set_friend_add_request_tool(
         self,
         event: AstrMessageEvent,
@@ -4346,7 +4408,7 @@ Returns:
             payload['remark'] = remark
         return await self._call_napcat_api(event, 'set_friend_add_request', payload)
 
-    @filter.llm_tool(name='napcat_set_friend_remark')
+    # napcat_tool: napcat_set_friend_remark
     async def napcat_set_friend_remark_tool(
         self,
         event: AstrMessageEvent,
@@ -4367,7 +4429,7 @@ Returns:
         payload['user_id'] = user_id
         return await self._call_napcat_api(event, 'set_friend_remark', payload)
 
-    @filter.llm_tool(name='napcat_set_group_add_option')
+    # napcat_tool: napcat_set_group_add_option
     async def napcat_set_group_add_option_tool(
         self,
         event: AstrMessageEvent,
@@ -4396,7 +4458,7 @@ Returns:
             payload['group_question'] = group_question
         return await self._call_napcat_api(event, 'set_group_add_option', payload)
 
-    @filter.llm_tool(name='napcat_set_group_add_request')
+    # napcat_tool: napcat_set_group_add_request
     async def napcat_set_group_add_request_tool(
         self,
         event: AstrMessageEvent,
@@ -4426,7 +4488,7 @@ Returns:
             payload['reason'] = reason
         return await self._call_napcat_api(event, 'set_group_add_request', payload)
 
-    @filter.llm_tool(name='napcat_set_group_admin')
+    # napcat_tool: napcat_set_group_admin
     async def napcat_set_group_admin_tool(
         self,
         event: AstrMessageEvent,
@@ -4450,7 +4512,7 @@ Returns:
         payload['user_id'] = user_id
         return await self._call_napcat_api(event, 'set_group_admin', payload)
 
-    @filter.llm_tool(name='napcat_set_group_album_media_like')
+    # napcat_tool: napcat_set_group_album_media_like
     async def napcat_set_group_album_media_like_tool(
         self,
         event: AstrMessageEvent,
@@ -4483,7 +4545,7 @@ Returns:
             payload['set'] = set
         return await self._call_napcat_api(event, 'set_group_album_media_like', payload)
 
-    @filter.llm_tool(name='napcat_set_group_anonymous')
+    # napcat_tool: napcat_set_group_anonymous
     async def napcat_set_group_anonymous_tool(
         self,
         event: AstrMessageEvent,
@@ -4504,7 +4566,7 @@ Returns:
             payload['enable'] = enable
         return await self._call_napcat_api(event, 'set_group_anonymous', payload)
 
-    @filter.llm_tool(name='napcat_set_group_anonymous_ban')
+    # napcat_tool: napcat_set_group_anonymous_ban
     async def napcat_set_group_anonymous_ban_tool(
         self,
         event: AstrMessageEvent,
@@ -4537,7 +4599,7 @@ Returns:
             payload['flag'] = flag
         return await self._call_napcat_api(event, 'set_group_anonymous_ban', payload)
 
-    @filter.llm_tool(name='napcat_set_group_ban')
+    # napcat_tool: napcat_set_group_ban
     async def napcat_set_group_ban_tool(
         self,
         event: AstrMessageEvent,
@@ -4561,7 +4623,7 @@ Returns:
         payload['user_id'] = user_id
         return await self._call_napcat_api(event, 'set_group_ban', payload)
 
-    @filter.llm_tool(name='napcat_set_group_card')
+    # napcat_tool: napcat_set_group_card
     async def napcat_set_group_card_tool(
         self,
         event: AstrMessageEvent,
@@ -4585,7 +4647,7 @@ Returns:
             payload['card'] = card
         return await self._call_napcat_api(event, 'set_group_card', payload)
 
-    @filter.llm_tool(name='napcat_set_group_kick')
+    # napcat_tool: napcat_set_group_kick
     async def napcat_set_group_kick_tool(
         self,
         event: AstrMessageEvent,
@@ -4609,7 +4671,7 @@ Returns:
             payload['reject_add_request'] = reject_add_request
         return await self._call_napcat_api(event, 'set_group_kick', payload)
 
-    @filter.llm_tool(name='napcat_set_group_kick_members')
+    # napcat_tool: napcat_set_group_kick_members
     async def napcat_set_group_kick_members_tool(
         self,
         event: AstrMessageEvent,
@@ -4633,7 +4695,7 @@ Returns:
             payload['reject_add_request'] = reject_add_request
         return await self._call_napcat_api(event, 'set_group_kick_members', payload)
 
-    @filter.llm_tool(name='napcat_set_group_leave')
+    # napcat_tool: napcat_set_group_leave
     async def napcat_set_group_leave_tool(
         self,
         event: AstrMessageEvent,
@@ -4654,7 +4716,7 @@ Returns:
             payload['is_dismiss'] = is_dismiss
         return await self._call_napcat_api(event, 'set_group_leave', payload)
 
-    @filter.llm_tool(name='napcat_set_group_name')
+    # napcat_tool: napcat_set_group_name
     async def napcat_set_group_name_tool(
         self,
         event: AstrMessageEvent,
@@ -4675,7 +4737,7 @@ Returns:
             payload['group_name'] = group_name
         return await self._call_napcat_api(event, 'set_group_name', payload)
 
-    @filter.llm_tool(name='napcat_set_group_portrait')
+    # napcat_tool: napcat_set_group_portrait
     async def napcat_set_group_portrait_tool(
         self,
         event: AstrMessageEvent,
@@ -4700,7 +4762,7 @@ Returns:
             payload['cache'] = cache
         return await self._call_napcat_api(event, 'set_group_portrait', payload)
 
-    @filter.llm_tool(name='napcat_set_group_remark')
+    # napcat_tool: napcat_set_group_remark
     async def napcat_set_group_remark_tool(
         self,
         event: AstrMessageEvent,
@@ -4721,7 +4783,7 @@ Returns:
             payload['remark'] = remark
         return await self._call_napcat_api(event, 'set_group_remark', payload)
 
-    @filter.llm_tool(name='napcat_set_group_robot_add_option')
+    # napcat_tool: napcat_set_group_robot_add_option
     async def napcat_set_group_robot_add_option_tool(
         self,
         event: AstrMessageEvent,
@@ -4746,7 +4808,7 @@ Returns:
             payload['robot_member_switch'] = robot_member_switch
         return await self._call_napcat_api(event, 'set_group_robot_add_option', payload)
 
-    @filter.llm_tool(name='napcat_set_group_search')
+    # napcat_tool: napcat_set_group_search
     async def napcat_set_group_search_tool(
         self,
         event: AstrMessageEvent,
@@ -4771,7 +4833,7 @@ Returns:
             payload['no_finger_open'] = no_finger_open
         return await self._call_napcat_api(event, 'set_group_search', payload)
 
-    @filter.llm_tool(name='napcat_set_group_sign')
+    # napcat_tool: napcat_set_group_sign
     async def napcat_set_group_sign_tool(
         self,
         event: AstrMessageEvent,
@@ -4788,7 +4850,7 @@ Returns:
         payload['group_id'] = group_id
         return await self._call_napcat_api(event, 'set_group_sign', payload)
 
-    @filter.llm_tool(name='napcat_set_group_special_title')
+    # napcat_tool: napcat_set_group_special_title
     async def napcat_set_group_special_title_tool(
         self,
         event: AstrMessageEvent,
@@ -4816,7 +4878,7 @@ Returns:
             payload['duration'] = duration
         return await self._call_napcat_api(event, 'set_group_special_title', payload)
 
-    @filter.llm_tool(name='napcat_set_group_todo')
+    # napcat_tool: napcat_set_group_todo
     async def napcat_set_group_todo_tool(
         self,
         event: AstrMessageEvent,
@@ -4840,7 +4902,7 @@ Returns:
             payload['message_seq'] = message_seq
         return await self._call_napcat_api(event, 'set_group_todo', payload)
 
-    @filter.llm_tool(name='napcat_set_group_whole_ban')
+    # napcat_tool: napcat_set_group_whole_ban
     async def napcat_set_group_whole_ban_tool(
         self,
         event: AstrMessageEvent,
@@ -4861,7 +4923,7 @@ Returns:
         payload['group_id'] = group_id
         return await self._call_napcat_api(event, 'set_group_whole_ban', payload)
 
-    @filter.llm_tool(name='napcat_set_guild_member_role')
+    # napcat_tool: napcat_set_guild_member_role
     async def napcat_set_guild_member_role_tool(
         self,
         event: AstrMessageEvent,
@@ -4891,7 +4953,7 @@ Returns:
             payload['users'] = users
         return await self._call_napcat_api(event, 'set_guild_member_role', payload)
 
-    @filter.llm_tool(name='napcat_set_input_status')
+    # napcat_tool: napcat_set_input_status
     async def napcat_set_input_status_tool(
         self,
         event: AstrMessageEvent,
@@ -4912,7 +4974,7 @@ Returns:
         payload['user_id'] = user_id
         return await self._call_napcat_api(event, 'set_input_status', payload)
 
-    @filter.llm_tool(name='napcat_set_model_show')
+    # napcat_tool: napcat_set_model_show
     async def napcat_set_model_show_tool(
         self,
         event: AstrMessageEvent,
@@ -4934,7 +4996,7 @@ Returns:
             payload['model_show'] = model_show
         return await self._call_napcat_api(event, '_set_model_show', payload)
 
-    @filter.llm_tool(name='napcat_set_msg_emoji_like')
+    # napcat_tool: napcat_set_msg_emoji_like
     async def napcat_set_msg_emoji_like_tool(
         self,
         event: AstrMessageEvent,
@@ -4959,7 +5021,7 @@ Returns:
             payload['set'] = set
         return await self._call_napcat_api(event, 'set_msg_emoji_like', payload)
 
-    @filter.llm_tool(name='napcat_set_online_status')
+    # napcat_tool: napcat_set_online_status
     async def napcat_set_online_status_tool(
         self,
         event: AstrMessageEvent,
@@ -4993,7 +5055,7 @@ Returns:
             payload['status'] = status
         return await self._call_napcat_api(event, 'set_online_status', payload)
 
-    @filter.llm_tool(name='napcat_set_qq_avatar')
+    # napcat_tool: napcat_set_qq_avatar
     async def napcat_set_qq_avatar_tool(
         self,
         event: AstrMessageEvent,
@@ -5011,7 +5073,7 @@ Returns:
             payload['file'] = file
         return await self._call_napcat_api(event, 'set_qq_avatar', payload)
 
-    @filter.llm_tool(name='napcat_set_qq_profile')
+    # napcat_tool: napcat_set_qq_profile
     async def napcat_set_qq_profile_tool(
         self,
         event: AstrMessageEvent,
@@ -5037,7 +5099,7 @@ Returns:
             payload['sex'] = sex
         return await self._call_napcat_api(event, 'set_qq_profile', payload)
 
-    @filter.llm_tool(name='napcat_set_restart')
+    # napcat_tool: napcat_set_restart
     async def napcat_set_restart_tool(
         self,
         event: AstrMessageEvent,
@@ -5055,7 +5117,7 @@ Returns:
             payload['delay'] = delay
         return await self._call_napcat_api(event, 'set_restart', payload)
 
-    @filter.llm_tool(name='napcat_set_self_longnick')
+    # napcat_tool: napcat_set_self_longnick
     async def napcat_set_self_longnick_tool(
         self,
         event: AstrMessageEvent,
@@ -5090,7 +5152,7 @@ Returns:
             payload['error'] = error
         return await self._call_napcat_api(event, 'test_download_stream', payload)
 
-    @filter.llm_tool(name='napcat_trans_group_file')
+    # napcat_tool: napcat_trans_group_file
     async def napcat_trans_group_file_tool(
         self,
         event: AstrMessageEvent,
@@ -5111,7 +5173,7 @@ Returns:
         payload['group_id'] = group_id
         return await self._call_napcat_api(event, 'trans_group_file', payload)
 
-    # @filter.llm_tool(name='napcat_translate_en2zh')
+    # disabled napcat_tool: napcat_translate_en2zh
     # async def napcat_translate_en2zh_tool(
     #     self,
     #     event: AstrMessageEvent,
@@ -5145,7 +5207,7 @@ Returns:
         payload: dict = {}
         return await self._call_napcat_api(event, 'unknown', payload)
 
-    @filter.llm_tool(name='napcat_update_guild_role')
+    # napcat_tool: napcat_update_guild_role
     async def napcat_update_guild_role_tool(
         self,
         event: AstrMessageEvent,
@@ -5179,7 +5241,7 @@ Returns:
             payload['independent'] = independent
         return await self._call_napcat_api(event, 'update_guild_role', payload)
 
-    @filter.llm_tool(name='napcat_upload_file_stream')
+    # napcat_tool: napcat_upload_file_stream
     async def napcat_upload_file_stream_tool(
         self,
         event: AstrMessageEvent,
@@ -5237,7 +5299,7 @@ Returns:
             payload['verify_only'] = verify_only
         return await self._call_napcat_api(event, 'upload_file_stream', payload)
 
-    @filter.llm_tool(name='napcat_upload_group_file')
+    # napcat_tool: napcat_upload_group_file
     async def napcat_upload_group_file_tool(
         self,
         event: AstrMessageEvent,
@@ -5274,7 +5336,7 @@ Returns:
             payload['folder_id'] = folder_id
         return await self._call_napcat_api(event, 'upload_group_file', payload)
 
-    @filter.llm_tool(name='napcat_upload_image_to_qun_album')
+    # napcat_tool: napcat_upload_image_to_qun_album
     async def napcat_upload_image_to_qun_album_tool(
         self,
         event: AstrMessageEvent,
@@ -5302,7 +5364,7 @@ Returns:
         payload['group_id'] = group_id
         return await self._call_napcat_api(event, 'upload_image_to_qun_album', payload)
 
-    @filter.llm_tool(name='napcat_upload_private_file')
+    # napcat_tool: napcat_upload_private_file
     async def napcat_upload_private_file_tool(
         self,
         event: AstrMessageEvent,

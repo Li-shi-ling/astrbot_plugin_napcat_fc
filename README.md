@@ -1,18 +1,18 @@
 ﻿# NapCat 函数工具
 
-这是一个 AstrBot 插件，用于把本地文档中的 NapCat / OneBot / go-cqhttp 用户 API 注册为可供 LLM 调用的函数工具。每个接口都按 `@filter.llm_tool` 装饰器格式显式注册，便于后续做动态工具发现和按需注入。
+这是一个 AstrBot 插件，用于把本地文档中的 NapCat / OneBot / go-cqhttp 用户 API 提供为可供 LLM 调用的函数工具。具体 NapCat 接口工具不使用 `@filter.llm_tool` 装饰器，默认不会把 160+ 个工具常驻注册到 AstrBot 全局工具管理器，而是在工具发现后按需注入到当前请求。
 
 ## 功能
 
 - 基于 `docs/napcat-apifox`、`docs/onebot-11` 和 `docs/go-cqhttp` 生成工具定义。
-- 每个发现到的用户 API 都有一个显式 `@filter.llm_tool` 方法，工具名格式为 `napcat_<接口名>`。
+- 每个发现到的用户 API 都有一个 `# napcat_tool: napcat_<接口名>` 元数据标记和对应异步方法，供工具数据库生成、搜索和按需构造使用。
 - 具体接口工具使用字段级参数，例如 `group_id`、`user_id`、`message`，不要求 LLM 传入统一 `payload`。
 - 工具能力提示保持为面向 LLM 的中文说明，不在能力描述中重复 `能力:`、API 路径或 Markdown 表格；提示应覆盖动作、对象和常见搜索词，便于 `napcat_search_tools` 发现对应工具。
 - 工具提示词优化进度记录在 `TODO.md`；当前保留注册的 162 个工具已全部完成提示词优化。
 - 低价值、危险、重复或更适合隐藏的工具候选记录在 `待删除.md`，用于后续决定删除、禁用或从工具发现中隐藏。
 - 复用 AstrBot 默认接入 NapCat 的 `AiocqhttpMessageEvent` 和当前事件的 `event.bot.api.call_action`，不自建 HTTP 客户端。
 - 初始化时创建工具管理数据库 `napcat_fc_tools.db`，记录工具名、API、能力、参数、平台限制、命名空间、搜索别名、风险等级和启用状态，供动态工具发现使用。
-- NapCat 工具默认不作为全局 active 工具常驻暴露，而是在 `on_llm_request(priority=-100)` 阶段按搜索发现结果和数据库状态注入到当前请求。
+- NapCat 工具默认使用 `lazy` 注册模式，不作为全局工具常驻注册或暴露，而是在 `on_llm_request(priority=-100)` 阶段按搜索发现结果和数据库状态构造请求级工具并注入到当前请求。
 - `napcat_search_tools` 搜索工具会一直注入到 aiocqhttp/NapCat 请求中。当当前可用工具列表里没有明确可以完成用户目标的 NapCat 工具时，应先调用它进行工具发现。它支持空格分词并发搜索，并会结合工具名、API、能力说明、命名空间、搜索别名和参数名综合排序；然后排除已发现工具，将剩余最相关的一批工具加入持久化发现队列，并立即注入当前请求后续工具调用。可通过 `result_limit` 控制本次加入工具列表的数量，默认 `3`；如果需要更广泛的工具集合，可以多次用同一个关键词搜索，已发现工具会被跳过，后续搜索会继续补充新候选。
 - 仅系统专属工具名记录在插件类属性 `WINDOWS_TOOL_NAMES`、`LINUX_TOOL_NAMES`、`MAC_TOOL_NAMES` 中；当前只有 OCR 工具属于 Windows 专属。
 - 信息获取类接口会通过函数 `return` 把 NapCat API 响应返回给 LLM，不直接向当前聊天发送消息。
@@ -35,7 +35,9 @@
 
 ## 配置
 
-当前版本使用显式 `@filter.llm_tool` 注册，不再通过配置开关动态增删全量工具。调用执行仍依赖当前消息事件是 aiocqhttp/NapCat 事件。
+`tool_registration_mode` 控制 NapCat 工具注册模式，默认 `lazy`。在该模式下，具体 NapCat 工具不会经过 `@filter.llm_tool` 注册；插件只保留搜索工具常驻注入，具体工具会在搜索发现或持久化队列命中时，基于工具数据库记录和插件绑定方法临时构造为当前请求级工具，避免一次性注册 160+ 个工具导致 AstrBot 内部 hook 或工具管理压力。
+
+如需回退到旧行为，可设置 `tool_registration_mode: static`。该模式会在插件初始化时手动全量注册所有 NapCat 工具，再按旧逻辑将它们设为非 active，并在 LLM 请求阶段复制到当前请求中。除非需要兼容依赖全局工具列表的旧流程，否则建议保持默认 `lazy`。
 
 插件加载时会自动把当前插件目录加入 Python 模块搜索路径，确保 AstrBot 从项目根目录或插件管理器加载 `main.py` 时也能找到内部包 `napcat_fc`。
 

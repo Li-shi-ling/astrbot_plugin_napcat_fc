@@ -1,5 +1,13 @@
 ﻿# 更新日志
 
+## v1.15.31 - 2026-04-27
+
+- 动态注入 NapCat 工具时补全 JSON Schema 的 `required` 字段，避免 AstrBot `spec_to_func` 默认不声明必填参数导致 LLM 把所有参数都视为可选。
+- `napcat_search_tools` 现在只将 `keyword` 标为必填，`result_limit` 保持可选；具体 NapCat 工具按函数签名生成必填参数列表。
+- 修复 `napcat_get_group_honor_info` 的 `type` 参数文档标注为可选但函数签名没有默认值的问题。
+- NapCat API 返回业务失败或 aiocqhttp 抛出异常时改为返回 `api_error` JSON 给 LLM，避免 `ERR_GROUP_IS_DELETED` 等接口失败升级为 AstrBot 工具执行警告。
+- 新增回归测试，覆盖动态工具 schema 必填参数、搜索工具 schema 必填参数，以及所有文档标注可选的参数都必须有 Python 默认值。
+
 ## v1.15.30 - 2026-04-27
 
 - 修复本地安装 zip 为平铺结构时，AstrBot v4.22.x 将 `.gitignore` 等第一个文件误当作解压目录导致安装失败的问题。

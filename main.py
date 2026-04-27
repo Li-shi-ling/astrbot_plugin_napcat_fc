@@ -58,7 +58,7 @@ from napcat_fc.tool_registry import build_tool_registry_data
     "astrbot_plugin_napcat_fc",
     "Soulter / AstrBot contributors",
     "将 NapCat / OneBot / go-cqhttp API 注册为 AstrBot 函数工具。",
-    "1.15.30",
+    "1.15.31",
 )
 class NapCatFunctionToolsPlugin(Star):
     SEARCH_TOOL_NAME = "napcat_search_tools"
@@ -248,7 +248,7 @@ class NapCatFunctionToolsPlugin(Star):
             """按关键词搜索 NapCat 工具，并立即注入本轮请求。"""
             return await self._run_search_tool(event, req, keyword, result_limit)
 
-        return self.context.get_llm_tool_manager().spec_to_func(
+        tool = self.context.get_llm_tool_manager().spec_to_func(
             name=self.SEARCH_TOOL_NAME,
             func_args=[
                 {
@@ -286,6 +286,8 @@ class NapCatFunctionToolsPlugin(Star):
             ),
             handler=search_handler,
         )
+        self._apply_required_parameters(tool, ["keyword"])
+        return tool
 
     @filter.llm_tool(name='napcat_search_tools')
     async def napcat_search_tools_tool(
@@ -486,12 +488,43 @@ Returns:
                 method_name=record.method_name,
             )
             return None
-        return self.context.get_llm_tool_manager().spec_to_func(
+        tool = self.context.get_llm_tool_manager().spec_to_func(
             name=record.tool_name,
             func_args=self._build_func_args_from_record(record),
             desc=record.capability,
             handler=handler,
         )
+        self._apply_required_parameters(
+            tool,
+            self._load_required_parameter_names(record.required_parameters_json),
+        )
+        return tool
+
+    def _apply_required_parameters(self, tool, required_parameter_names: list[str]):
+        parameters = getattr(tool, "parameters", None)
+        if not isinstance(parameters, dict):
+            return
+        properties = parameters.get("properties")
+        if not isinstance(properties, dict):
+            return
+        required = [
+            name
+            for name in required_parameter_names
+            if isinstance(name, str) and name in properties
+        ]
+        if required:
+            parameters["required"] = required
+        else:
+            parameters.pop("required", None)
+
+    def _load_required_parameter_names(self, required_parameters_json: str) -> list[str]:
+        try:
+            required = json.loads(required_parameters_json)
+        except (TypeError, json.JSONDecodeError):
+            return []
+        if not isinstance(required, list):
+            return []
+        return [name for name in required if isinstance(name, str)]
 
     def _build_func_args_from_record(self, record) -> list[dict]:
         try:
@@ -750,6 +783,20 @@ Returns:
                     "endpoint": action,
                 },
                 ensure_ascii=False,
+            )
+        except Exception as exc:
+            return json.dumps(
+                {
+                    "status": "api_error",
+                    "retcode": getattr(exc, "retcode", None),
+                    "data": None,
+                    "message": str(exc),
+                    "endpoint": action,
+                    "payload": payload,
+                    "error_type": type(exc).__name__,
+                },
+                ensure_ascii=False,
+                default=str,
             )
         return self._format_napcat_return_message(action, result)
 
@@ -2618,7 +2665,7 @@ Returns:
     async def napcat_get_group_honor_info_tool(
         self,
         event: AstrMessageEvent,
-        type: str,
+        type: str = None,
         group_id: int = None,
     ):
         """获取群荣誉信息，适合查询龙王、群聊之火、快乐源泉、活跃成员和群荣誉榜

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import importlib.util
+import inspect
 import re
 import sqlite3
 import subprocess
@@ -55,6 +56,16 @@ class SlowApi:
         self.calls.append((action, payload))
         await asyncio.sleep(self.delay)
         return {"status": "ok", "data": payload}
+
+
+class FailingApi:
+    def __init__(self, error: Exception):
+        self.error = error
+        self.calls = []
+
+    async def call_action(self, action, **payload):
+        self.calls.append((action, payload))
+        raise self.error
 
 
 class ArkApi:
@@ -668,6 +679,26 @@ async def test_call_napcat_api_can_timeout_action_when_requested():
     assert payload["status"] == "api_timeout"
     assert payload["endpoint"] == "get_group_list"
     assert event.bot.api.calls == [("get_group_list", {})]
+
+
+@pytest.mark.asyncio
+async def test_call_napcat_api_returns_llm_friendly_message_on_action_failure():
+    event = make_aiocqhttp_event(group_id="654321", user_id="123456")
+    event.bot.api = FailingApi(RuntimeError("ERR_GROUP_IS_DELETED"))
+    plugin = NapCatFunctionToolsPlugin(context=None)
+
+    result = await plugin._call_napcat_api(
+        event,
+        "set_group_ban",
+        {"group_id": 654321, "user_id": 123456, "duration": 3600},
+    )
+    payload = json.loads(result)
+
+    assert payload["status"] == "api_error"
+    assert payload["endpoint"] == "set_group_ban"
+    assert payload["message"] == "ERR_GROUP_IS_DELETED"
+    assert payload["error_type"] == "RuntimeError"
+    assert payload["payload"]["group_id"] == 654321
 
 
 def test_translate_en2zh_tool_is_disabled_for_current_napcat_version():
@@ -1491,12 +1522,54 @@ async def test_on_llm_request_builds_discovered_tools_in_lazy_mode_without_globa
         assert injected.active is True
         assert injected.handler == plugin.napcat_send_msg_tool
         assert "message" in injected.parameters["properties"]
+        assert injected.parameters["required"] == ["message", "message_type"]
+        assert "group_id" not in injected.parameters["required"]
     finally:
         await plugin.tool_db.close()
         for suffix in ("", "-wal", "-shm"):
             path = Path(str(db_path) + suffix)
             if path.exists():
                 path.unlink()
+
+
+def test_dynamic_tool_schema_marks_required_parameters_only():
+    plugin = NapCatFunctionToolsPlugin(context=FakeContext([]))
+    tool = plugin._build_tool_from_registry_record("napcat_send_msg")
+
+    assert tool is not None
+    assert tool.parameters["required"] == ["message", "message_type"]
+    assert "group_id" in tool.parameters["properties"]
+    assert "group_id" not in tool.parameters["required"]
+
+
+def test_search_tool_schema_marks_keyword_required_only():
+    plugin = NapCatFunctionToolsPlugin(context=FakeContext([]))
+    req = ProviderRequest()
+    req.func_tool = ToolSet()
+
+    tool = plugin._build_search_tool(req)
+
+    assert tool.parameters["required"] == ["keyword"]
+    assert "result_limit" in tool.parameters["properties"]
+    assert "result_limit" not in tool.parameters["required"]
+
+
+def test_no_optional_doc_parameter_is_required_by_signature():
+    issues = []
+    for record in build_tool_registry_data(NapCatFunctionToolsPlugin):
+        method = getattr(NapCatFunctionToolsPlugin, record.method_name)
+        signature = inspect.signature(method)
+        for parameter in json.loads(record.parameters_json):
+            name = parameter["name"]
+            description = parameter.get("description", "")
+            signature_parameter = signature.parameters[name]
+            if (
+                "可选" in description
+                and signature_parameter.default is inspect.Signature.empty
+            ):
+                issues.append(f"{record.tool_name}.{name}")
+
+    assert issues == []
 
 
 @pytest.mark.asyncio

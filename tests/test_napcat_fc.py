@@ -42,6 +42,15 @@ class FakeApi:
         return {"status": "ok", "data": payload}
 
 
+class NullApi:
+    def __init__(self):
+        self.calls = []
+
+    async def call_action(self, action, **payload):
+        self.calls.append((action, payload))
+        return None
+
+
 class FakeBot:
     def __init__(self):
         self.api = FakeApi()
@@ -132,11 +141,12 @@ def make_aiocqhttp_event(
     message_id: str = "1",
     message_components: list | None = None,
     raw_message=None,
+    message_str: str = "",
 ):
     message = AstrBotMessage()
     message.type = MessageType.GROUP_MESSAGE if group_id else MessageType.FRIEND_MESSAGE
     message.message = list(message_components or [])
-    message.message_str = ""
+    message.message_str = message_str
     message.sender = MessageMember(user_id=user_id, nickname="tester")
     message.self_id = "10000"
     message.message_id = message_id
@@ -144,7 +154,7 @@ def make_aiocqhttp_event(
     message.session_id = group_id or user_id
     message.raw_message = raw_message
     return AiocqhttpMessageEvent(
-        message_str="",
+        message_str=message_str,
         message_obj=message,
         platform_meta=PlatformMetadata(
             name="aiocqhttp",
@@ -884,6 +894,22 @@ async def test_call_napcat_api_returns_llm_friendly_message_on_action_failure():
     assert payload["message"] == "ERR_GROUP_IS_DELETED"
     assert payload["error_type"] == "RuntimeError"
     assert payload["payload"]["group_id"] == 654321
+
+
+@pytest.mark.asyncio
+async def test_call_napcat_api_wraps_empty_action_result_for_llm():
+    event = make_aiocqhttp_event(group_id="654321", user_id="123456")
+    event.bot.api = NullApi()
+    plugin = NapCatFunctionToolsPlugin(context=None)
+
+    result = await plugin.napcat_send_group_sign_tool(event)
+    payload = json.loads(result)
+
+    assert payload["status"] == "ok"
+    assert payload["endpoint"] == "send_group_sign"
+    assert payload["data"] is None
+    assert "没有返回业务数据" in payload["message"]
+    assert event.bot.api.calls == [("send_group_sign", {"group_id": 654321})]
 
 
 def test_translate_en2zh_tool_is_disabled_for_current_napcat_version():
@@ -1858,6 +1884,44 @@ async def test_on_llm_request_skips_napcat_tools_for_non_aiocqhttp_events():
 
 
 @pytest.mark.asyncio
+async def test_llm_request_normalizes_qq_keyword_to_napcat_for_current_user_text():
+    event = make_aiocqhttp_event(
+        group_id="654321",
+        message_str="用 QQ 群打卡接口",
+    )
+    plugin = NapCatFunctionToolsPlugin(
+        context=FakeContext([]),
+        config={"dynamic_injection_enabled": False},
+    )
+    req = ProviderRequest(
+        prompt="帮我找 qq 打卡工具",
+        contexts=[
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "当前用户说 QQ 群打卡"},
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": "https://example.com/a.png"},
+                    },
+                ],
+            },
+            {"role": "assistant", "content": "QQ 这个词不应在助手历史里改写"},
+        ],
+    )
+    req.func_tool = ToolSet()
+
+    await plugin.inject_napcat_tools_on_llm_request(event, req)
+
+    assert event.message_str == "用 napcat 群打卡接口"
+    assert event.message_obj.message_str == "用 napcat 群打卡接口"
+    assert req.prompt == "帮我找 napcat 打卡工具"
+    assert req.contexts[0]["content"][0]["text"] == "当前用户说 napcat 群打卡"
+    assert req.contexts[1]["content"] == "QQ 这个词不应在助手历史里改写"
+    assert req.func_tool.get_tool(plugin.SEARCH_TOOL_NAME) is not None
+
+
+@pytest.mark.asyncio
 async def test_search_tool_discovers_persists_and_immediately_injects_tools():
     send_group_tool = make_function_tool("napcat_send_msg", active=False)
     get_group_tool = make_function_tool("napcat_get_group_list", active=False)
@@ -1936,6 +2000,43 @@ async def test_registered_search_tool_uses_remembered_request_context():
 
         assert payload["injected_count"] == 1
         assert req.func_tool.get_tool("napcat_send_msg") is not None
+    finally:
+        await plugin.tool_db.close()
+        for suffix in ("", "-wal", "-shm"):
+            path = Path(str(db_path) + suffix)
+            if path.exists():
+                path.unlink()
+
+
+@pytest.mark.asyncio
+async def test_search_tool_normalizes_qq_keyword_to_napcat():
+    send_group_tool = make_function_tool("napcat_send_msg", active=False)
+    plugin = NapCatFunctionToolsPlugin(context=FakeContext([send_group_tool]))
+    db_path = (
+        Path(__file__).resolve().parents[1]
+        / f".test-qq-normalize-search-tools-{uuid.uuid4().hex}.db"
+    )
+    plugin.tool_db = ToolDBManager(str(db_path))
+    plugin.tool_registry_repo = ToolRegistryRepo(plugin.tool_db)
+    await plugin.tool_db.init_db()
+    try:
+        records = [
+            record
+            for record in build_tool_registry_data(NapCatFunctionToolsPlugin)
+            if record.tool_name == "napcat_send_msg"
+        ]
+        await plugin.tool_registry_repo.replace_all_tools(records)
+        event = make_aiocqhttp_event()
+        req = ProviderRequest()
+        req.func_tool = ToolSet()
+        await plugin.inject_napcat_tools_on_llm_request(event, req)
+
+        result = await plugin.napcat_search_tools_tool(event, keyword="qq send msg")
+        payload = json.loads(result)
+
+        assert payload["original_keyword"] == "qq send msg"
+        assert payload["keyword"] == "napcat send msg"
+        assert payload["search_terms"] == ["napcat", "send", "msg"]
     finally:
         await plugin.tool_db.close()
         for suffix in ("", "-wal", "-shm"):

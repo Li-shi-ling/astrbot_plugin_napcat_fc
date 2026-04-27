@@ -1,5 +1,11 @@
 ﻿# 更新日志
 
+## v1.15.38 - 2026-04-27
+
+- 新增当前用户请求关键词归一规则：在 aiocqhttp/NapCat 请求中，用户文本和工具搜索关键词里的 `qq`/`QQ` 会替换为 `napcat`，降低模型把 NapCat 能力误判为普通 QQ 文本操作的概率。
+- 改进 NapCat 空回执处理：当 `send_group_sign` 等动作接口返回 `None/null` 时，工具结果会包装为 LLM 可读的 `status: ok` JSON，明确接口已调用但无业务数据。
+- 新增回归测试覆盖请求文本归一、搜索关键词归一和群打卡空回执格式化。
+
 ## v1.15.37 - 2026-04-27
 
 - 修复 `napcat_get_msg_history` 在未传 `message_seq` 时，部分 NapCat 版本把缺省起始消息处理为 `undefined` 并返回“消息 undefined 不存在”的问题；现在默认传入 `message_seq=0` 获取最近消息。
@@ -355,8 +361,3 @@
 - 将 NapCat / OneBot HTTP API 批量注册为 AstrBot LLM 函数工具。
 - 新增插件配置 schema、开发约束文件和 pytest 测试。
 - 将 README 和元数据改为中文展示内容。
-## v1.15.37 - 2026-04-27
-
-- 修复 `napcat_get_msg_history` 在未传 `message_seq` 时，部分 NapCat 版本把缺省起始消息处理为 `undefined` 并返回“消息 undefined 不存在”的问题；现在默认传入 `message_seq=0` 获取最近消息。
-- 增强上下文 ID 容错：当群聊工具收到的 `group_id` 等于当前消息发送者 `user_id` 时，判定为 LLM 把用户号误填为群号，自动回退当前群号并输出警告。
-- 新增回归测试覆盖历史消息默认 `message_seq`、误填 `group_id` 自动修正，以及统一历史工具调用链。

@@ -58,7 +58,7 @@ from napcat_fc.tool_registry import build_tool_registry_data
     "astrbot_plugin_napcat_fc",
     "Soulter / AstrBot contributors",
     "将 NapCat / OneBot / go-cqhttp API 注册为 AstrBot 函数工具。",
-    "1.15.37",
+    "1.15.38",
 )
 class NapCatFunctionToolsPlugin(Star):
     SEARCH_TOOL_NAME = "napcat_search_tools"
@@ -163,6 +163,7 @@ class NapCatFunctionToolsPlugin(Star):
             self._debug_log("llm_request:skip_non_aiocqhttp")
             return
 
+        self._normalize_current_user_request_keywords(event, req)
         self._remember_provider_request(event, req)
         self._ensure_request_tool_set(req)
         req.func_tool.add_tool(self._build_search_tool(req))
@@ -202,6 +203,75 @@ class NapCatFunctionToolsPlugin(Star):
         self, event: AstrMessageEvent
     ) -> ProviderRequest | None:
         return self._provider_requests_by_event_id.get(id(event))
+
+    def _replace_qq_keyword_with_napcat(self, text):
+        if not isinstance(text, str) or "qq" not in text.lower():
+            return text
+        return re.sub(r"qq", "napcat", text, flags=re.IGNORECASE)
+
+    def _normalize_current_user_request_keywords(
+        self, event: AstrMessageEvent, req: ProviderRequest
+    ):
+        replacements = 0
+
+        original_message = getattr(event, "message_str", None)
+        normalized_message = self._replace_qq_keyword_with_napcat(original_message)
+        if normalized_message != original_message:
+            try:
+                event.message_str = normalized_message
+            except Exception:
+                pass
+            replacements += 1
+
+        message_obj = getattr(event, "message_obj", None)
+        original_obj_message = getattr(message_obj, "message_str", None)
+        normalized_obj_message = self._replace_qq_keyword_with_napcat(
+            original_obj_message
+        )
+        if normalized_obj_message != original_obj_message:
+            try:
+                message_obj.message_str = normalized_obj_message
+            except Exception:
+                pass
+            replacements += 1
+
+        original_prompt = getattr(req, "prompt", None)
+        normalized_prompt = self._replace_qq_keyword_with_napcat(original_prompt)
+        if normalized_prompt != original_prompt:
+            req.prompt = normalized_prompt
+            replacements += 1
+
+        replacements += self._normalize_user_context_keywords(req)
+        if replacements:
+            self._debug_log(
+                "request_keyword_normalized",
+                rule="qq->napcat",
+                replacements=replacements,
+            )
+
+    def _normalize_user_context_keywords(self, req: ProviderRequest) -> int:
+        replacements = 0
+        for ctx in getattr(req, "contexts", []) or []:
+            if not isinstance(ctx, dict) or ctx.get("role") != "user":
+                continue
+            content = ctx.get("content")
+            if isinstance(content, str):
+                normalized = self._replace_qq_keyword_with_napcat(content)
+                if normalized != content:
+                    ctx["content"] = normalized
+                    replacements += 1
+                continue
+            if not isinstance(content, list):
+                continue
+            for item in content:
+                if not isinstance(item, dict) or item.get("type") != "text":
+                    continue
+                text = item.get("text")
+                normalized = self._replace_qq_keyword_with_napcat(text)
+                if normalized != text:
+                    item["text"] = normalized
+                    replacements += 1
+        return replacements
 
     def _inject_tool_names_into_request(
         self, req: ProviderRequest, tool_names: list[str]
@@ -335,9 +405,12 @@ Returns:
             )
             raise ValueError("NapCat search tool requires an aiocqhttp/NapCat message event.")
 
+        original_keyword = keyword
+        keyword = self._replace_qq_keyword_with_napcat(keyword)
         self._debug_log(
             "search_tool:start",
             keyword=keyword,
+            original_keyword=original_keyword,
             event_type=type(event).__name__,
         )
         search_terms = self._build_search_terms(keyword)
@@ -406,6 +479,7 @@ Returns:
         return json.dumps(
             {
                 "keyword": keyword,
+                "original_keyword": original_keyword,
                 "search_terms": search_terms,
                 "candidate_limit": candidate_limit,
                 "result_limit": result_limit_value,
@@ -811,6 +885,18 @@ Returns:
 
     def _format_napcat_return_message(self, action: str, result) -> str:
         """LLM 工具通过 return 把 NapCat 结果交回模型，不直接发送聊天消息。"""
+        if result is None:
+            return json.dumps(
+                {
+                    "status": "ok",
+                    "endpoint": action,
+                    "data": None,
+                    "message": (
+                        f"NapCat API '{action}' 已完成调用，但接口没有返回业务数据。"
+                    ),
+                },
+                ensure_ascii=False,
+            )
         if self._is_information_action(action):
             return json.dumps(result, ensure_ascii=False, default=str)
         return json.dumps(result, ensure_ascii=False, default=str)

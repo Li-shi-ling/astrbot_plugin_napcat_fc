@@ -236,7 +236,7 @@ async def test_endpoint_tool_calls_expected_endpoint():
 
     result = await plugin.napcat_send_msg_tool(
         event,
-        group_id=123,
+        group_id=123456,
         message="hello",
         message_type="group",
         auto_escape=False,
@@ -247,7 +247,7 @@ async def test_endpoint_tool_calls_expected_endpoint():
         (
             "send_msg",
             {
-                "group_id": 123,
+                "group_id": 123456,
                 "message": "hello",
                 "message_type": "group",
                 "auto_escape": False,
@@ -275,6 +275,72 @@ def test_context_defaults_fill_values_from_aiocqhttp_event():
         "self_id": 10000,
         "message_id": 789,
     }
+
+
+def test_context_defaults_treat_zero_and_blank_as_current_context_markers():
+    event = make_aiocqhttp_event(group_id="654321", user_id="123456", message_id="789")
+    plugin = NapCatFunctionToolsPlugin(context=None)
+    payload = {
+        "group_id": 0,
+        "user_id": "0",
+        "self_id": "",
+        "message_id": " ",
+    }
+
+    assert plugin._fill_context_defaults(event, payload) is None
+
+    assert payload == {
+        "group_id": 654321,
+        "user_id": 123456,
+        "self_id": 10000,
+        "message_id": 789,
+    }
+
+
+def test_context_defaults_fallback_invalid_short_ids_and_warn(monkeypatch):
+    warnings = []
+    monkeypatch.setattr("main.logger.warning", warnings.append)
+    event = make_aiocqhttp_event(group_id="654321", user_id="123456", message_id="789")
+    plugin = NapCatFunctionToolsPlugin(context=None)
+    payload = {
+        "group_id": "12345",
+        "user_id": "not-a-number",
+        "self_id": 123,
+    }
+
+    assert plugin._fill_context_defaults(event, payload) is None
+
+    assert payload == {
+        "group_id": 654321,
+        "user_id": 123456,
+        "self_id": 10000,
+    }
+    assert len(warnings) == 3
+    assert all("已回退为当前会话默认值" in item for item in warnings)
+
+
+def test_context_defaults_can_disable_invalid_short_id_fallback(monkeypatch):
+    warnings = []
+    monkeypatch.setattr("main.logger.warning", warnings.append)
+    event = make_aiocqhttp_event(group_id="654321", user_id="123456", message_id="789")
+    plugin = NapCatFunctionToolsPlugin(
+        context=None,
+        config={"fallback_invalid_context_ids": False},
+    )
+    payload = {
+        "group_id": "12345",
+        "user_id": "not-a-number",
+        "self_id": 123,
+    }
+
+    assert plugin._fill_context_defaults(event, payload) is None
+
+    assert payload == {
+        "group_id": "12345",
+        "user_id": "not-a-number",
+        "self_id": 123,
+    }
+    assert warnings == []
 
 
 def test_message_id_default_prefers_reply_component_then_current_message():
@@ -634,7 +700,7 @@ async def test_onebot_alias_parameters_are_expanded():
 
     await plugin.napcat_set_group_anonymous_ban_tool(
         event,
-        group_id=123,
+        group_id=123456,
         flag="anonymous-flag",
         duration=60,
     )
@@ -642,7 +708,7 @@ async def test_onebot_alias_parameters_are_expanded():
     assert event.bot.api.calls == [
         (
             "set_group_anonymous_ban",
-            {"group_id": 123, "duration": 60, "flag": "anonymous-flag"},
+            {"group_id": 123456, "duration": 60, "flag": "anonymous-flag"},
         )
     ]
 
@@ -1032,6 +1098,65 @@ async def test_ark_share_tools_auto_send_direct_ark_json_string():
                     "user_id": 3527679745,
             },
         ),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_group_ark_share_zero_group_id_uses_current_group_before_auto_send():
+    event = make_aiocqhttp_event(group_id="654321", user_id="123456")
+    ark_json = '{"app":"com.tencent.contact.lua","prompt":"group card"}'
+    event.bot.api = ArkApi(ark_data=ark_json)
+    plugin = NapCatFunctionToolsPlugin(context=None)
+
+    result = await plugin.napcat_send_group_ark_share_tool(
+        event,
+        group_id=0,
+        send_user_id=3527679745,
+    )
+    payload = json.loads(result)
+
+    assert payload["status"] == "ok"
+    assert event.bot.api.calls == [
+        ("send_group_ark_share", {"group_id": 654321}),
+        (
+            "send_private_msg",
+            {
+                    "message": [{"type": "json", "data": {"data": ark_json}}],
+                    "user_id": 3527679745,
+            },
+        ),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_ark_share_invalid_send_target_falls_back_to_current_context(monkeypatch):
+    warnings = []
+    monkeypatch.setattr("main.logger.warning", warnings.append)
+    event = make_aiocqhttp_event(group_id="654321", user_id="123456")
+    ark_json = '{"app":"com.tencent.contact.lua","prompt":"group card"}'
+    event.bot.api = ArkApi(ark_data=ark_json)
+    plugin = NapCatFunctionToolsPlugin(context=None)
+
+    result = await plugin.napcat_send_group_ark_share_tool(
+        event,
+        group_id=654321,
+        send_user_id="12345",
+    )
+    payload = json.loads(result)
+
+    assert payload["status"] == "ok"
+    assert event.bot.api.calls == [
+        ("send_group_ark_share", {"group_id": 654321}),
+        (
+            "send_group_msg",
+            {
+                "group_id": 654321,
+                "message": [{"type": "json", "data": {"data": ark_json}}],
+            },
+        ),
+    ]
+    assert warnings == [
+        "NapCat 工具参数 send_user_id='12345' 小于 6 位或不是纯数字，已回退为当前会话默认值。"
     ]
 
 

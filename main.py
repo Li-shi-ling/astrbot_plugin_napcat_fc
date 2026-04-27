@@ -58,7 +58,7 @@ from napcat_fc.tool_registry import build_tool_registry_data
     "astrbot_plugin_napcat_fc",
     "Soulter / AstrBot contributors",
     "将 NapCat / OneBot / go-cqhttp API 注册为 AstrBot 函数工具。",
-    "1.15.32",
+    "1.15.34",
 )
 class NapCatFunctionToolsPlugin(Star):
     SEARCH_TOOL_NAME = "napcat_search_tools"
@@ -84,6 +84,9 @@ class NapCatFunctionToolsPlugin(Star):
     def __init__(self, context: Context, config: dict = None):
         super().__init__(context)
         self.config = dict(config or {})
+        self.fallback_invalid_context_ids = bool(
+            self.config.get("fallback_invalid_context_ids", True)
+        )
         self.tool_count = 162
         self.tool_registry_records = build_tool_registry_data(type(self))
         self.tool_registry_records_by_name = {
@@ -929,9 +932,21 @@ Returns:
     ) -> dict:
         group_ids = []
         user_ids = []
-        if send_group_id is not None:
+        if (
+            send_group_id is not None
+            and not self._should_use_context_default_for_id(
+                "send_group_id",
+                send_group_id,
+            )
+        ):
             group_ids.append(self._normalize_numeric_id(send_group_id))
-        if send_user_id is not None:
+        if (
+            send_user_id is not None
+            and not self._should_use_context_default_for_id(
+                "send_user_id",
+                send_user_id,
+            )
+        ):
             user_ids.append(self._normalize_numeric_id(send_user_id))
         if group_ids or user_ids:
             return {"group_ids": group_ids, "user_ids": user_ids}
@@ -961,6 +976,36 @@ Returns:
 
     def _normalize_numeric_id(self, value):
         return int(value) if str(value).isdigit() else value
+
+    def _is_context_default_marker(self, value) -> bool:
+        if value is None:
+            return True
+        if isinstance(value, str):
+            value = value.strip()
+            return value == "" or value == "0"
+        return value == 0
+
+    def _is_invalid_context_id(self, value) -> bool:
+        if self._is_context_default_marker(value):
+            return True
+        text = str(value).strip()
+        return not text.isdigit() or len(text) < 6
+
+    def _should_use_context_default_for_id(self, field_name: str, value) -> bool:
+        if self._is_context_default_marker(value):
+            if value not in (None, ""):
+                logger.warning(
+                    f"NapCat 工具参数 {field_name}={value!r} 无效，已回退为当前会话默认值。"
+                )
+            return True
+        if not self.fallback_invalid_context_ids:
+            return False
+        if not self._is_invalid_context_id(value):
+            return False
+        logger.warning(
+            f"NapCat 工具参数 {field_name}={value!r} 小于 6 位或不是纯数字，已回退为当前会话默认值。"
+        )
+        return True
 
     def _loads_json_or_text(self, text: str):
         try:
@@ -1026,25 +1071,46 @@ Returns:
         event: AiocqhttpMessageEvent,
         payload: dict,
     ) -> str | None:
-        if payload.get("group_id", None) is None and "group_id" in payload:
+        if (
+            "group_id" in payload
+            and self._should_use_context_default_for_id(
+                "group_id",
+                payload.get("group_id"),
+            )
+        ):
             group_id = event.get_group_id()
             if not group_id:
                 return "当前消息不是群聊事件，无法自动获取 group_id。请让用户提供群号，或改用私聊相关工具。"
             payload["group_id"] = int(group_id) if str(group_id).isdigit() else group_id
 
-        if payload.get("user_id", None) is None and "user_id" in payload:
+        if (
+            "user_id" in payload
+            and self._should_use_context_default_for_id(
+                "user_id",
+                payload.get("user_id"),
+            )
+        ):
             user_id = event.get_sender_id()
             if not user_id:
                 return "当前消息无法自动获取 user_id。请让用户提供 QQ 号或目标用户 ID。"
             payload["user_id"] = int(user_id) if str(user_id).isdigit() else user_id
 
-        if payload.get("self_id", None) is None and "self_id" in payload:
+        if (
+            "self_id" in payload
+            and self._should_use_context_default_for_id(
+                "self_id",
+                payload.get("self_id"),
+            )
+        ):
             self_id = event.get_self_id()
             if not self_id:
                 return "当前消息无法自动获取 self_id。请明确提供机器人账号 ID。"
             payload["self_id"] = int(self_id) if str(self_id).isdigit() else self_id
 
-        if payload.get("message_id", None) is None and "message_id" in payload:
+        if (
+            "message_id" in payload
+            and self._is_context_default_marker(payload.get("message_id"))
+        ):
             message_id = self._get_default_message_id(event)
             if not message_id:
                 return "当前消息无法自动获取 message_id。请明确提供消息 ID。"

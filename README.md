@@ -23,7 +23,7 @@
 
 ## 会话默认参数
 
-部分可以从 `AiocqhttpMessageEvent` 获取的参数已经改为可选，默认值为 `None`。当工具调用传入 `None` 或省略这些参数时，插件会按当前会话自动补齐：
+部分可以从 `AiocqhttpMessageEvent` 获取的参数已经改为可选，默认值为 `None`。当工具调用传入 `None`、`0`、空字符串或省略这些参数时，插件会按当前会话自动补齐：
 
 - `group_id`：默认使用当前群聊的群号，即 `event.get_group_id()`。
 - `user_id`：默认使用当前消息发送者 ID，即 `event.get_sender_id()`。
@@ -33,7 +33,7 @@
 
 如果在私聊中调用需要群号的群聊工具，且没有显式提供 `group_id`，工具不会请求 NapCat API，而是返回 LLM 可读的 JSON 提示，说明当前消息不是群聊事件并要求提供群号或改用私聊工具。
 
-对于所有同时具有群号和用户号输入语义的工具，插件会在调用 NapCat 前统一归一化参数：未提供 `user_id` 时使用当前消息发送者；群聊中未提供 `group_id` 时使用当前群号；私聊中不会为可选群号强行补值。`target_id` 这类目标 QQ 别名会在存在 `user_id` 语义的工具中自动映射为 `user_id`，不会把 `target_id` 原样传给 NapCat。
+对于所有同时具有群号和用户号输入语义的工具，插件会在调用 NapCat 前统一归一化参数：未提供 `user_id` 或传入 `0` 时使用当前消息发送者；群聊中未提供 `group_id` 或传入 `0` 时使用当前群号；私聊中不会为可选群号强行补值。`target_id` 这类目标 QQ 别名会在存在 `user_id` 语义的工具中自动映射为 `user_id`，不会把 `target_id` 原样传给 NapCat。
 
 ## 配置
 
@@ -58,6 +58,8 @@
 如需调整已发现工具持久化队列上限，可在插件配置中设置 `discovered_tool_limit`，默认 `20`，最小有效值为 `1`。
 
 如需让同一轮 LLM 请求中通过 `napcat_search_tools` 添加的工具不受持久化队列上限限制，可设置 `unlimited_request_tool_injection: true`。开启后，本轮请求内多次搜索会继续注入新工具；请求结束后的下一轮仍按 `discovered_tool_limit` 只保留持久化队列上限内的工具。
+
+如需控制上下文 ID 容错，可设置 `fallback_invalid_context_ids`，默认 `true`。开启后，`group_id`、`user_id`、`self_id`、Ark 自动发送目标 `send_group_id`、`send_user_id` 等可从当前事件补齐或回退的 ID 参数如果小于 6 位或不是纯数字，插件会回退为当前会话默认值，并在后台通过 AstrBot logger 输出警告；关闭后只对 `None`、`0` 和空字符串走默认补齐。
 
 如需排查动态注入、搜索或数据库同步流程，可在插件配置中设置 `debug: true`。开启后插件会使用 AstrBot 提供的 `logger.debug` 输出关键运行节点日志。调试日志包含 `elapsed_ms` 和 `delta_ms`，用于定位搜索、数据库读取、工具注入等性能瓶颈。
 

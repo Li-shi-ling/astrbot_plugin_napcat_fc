@@ -55,14 +55,22 @@ def package_plugin(output_path: Path) -> Path:
     if not tracked_files:
         raise RuntimeError("No git tracked files found.")
 
+    plugin_name, _ = read_metadata_name_and_version()
+    package_root = plugin_name.strip().strip("/\\")
+    if not package_root:
+        raise RuntimeError("metadata.yaml must contain a valid plugin name.")
+
     output_path = output_path.resolve()
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(output_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        # AstrBot v4.22.x expects the first zip entry to be a directory.
+        zf.writestr(f"{package_root}/", "")
         for relative_path in tracked_files:
             source_path = PLUGIN_ROOT / relative_path
             if not source_path.is_file():
                 continue
-            zf.write(source_path, relative_path.as_posix())
+            archive_name = f"{package_root}/{relative_path.as_posix()}"
+            zf.write(source_path, archive_name)
     return output_path
 
 

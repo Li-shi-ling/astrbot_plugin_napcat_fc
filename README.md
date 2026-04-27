@@ -75,7 +75,7 @@
 python scripts/package_plugin.py
 ```
 
-脚本只打包 `git ls-files` 返回的已跟踪文件，输出到 `dist/astrbot_plugin_napcat_fc-<version>.zip`。压缩包根目录会直接包含 `metadata.yaml`，符合 AstrBot 上传安装时从解压根目录读取插件元数据的要求。
+脚本只打包 `git ls-files` 返回的已跟踪文件，输出到 `dist/astrbot_plugin_napcat_fc-<version>.zip`。压缩包第一项是 `astrbot_plugin_napcat_fc/` 顶层目录，目录内包含 `metadata.yaml`，符合 AstrBot v4.22.x 上传安装时先解压顶层目录、再移动目录内容的逻辑。
 
 ## 使用方式
 

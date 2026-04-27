@@ -784,17 +784,20 @@ def test_package_script_builds_astrbot_install_zip_from_tracked_files(tmp_path):
     assert result.returncode == 0, result.stderr
     assert output_path.exists()
     with zipfile.ZipFile(output_path) as zf:
-        names = set(zf.namelist())
+        name_list = zf.namelist()
+        names = set(name_list)
 
-    assert "metadata.yaml" in names
-    assert "main.py" in names
-    assert "README.md" in names
-    assert "napcat_fc/db/database.py" in names
-    assert "TODO.md" not in names
-    assert "CONSTRAINTS.md" not in names
-    assert "待删除.md" not in names
-    assert all(not name.startswith("report/") for name in names)
-    assert all(not name.startswith("dist/") for name in names)
+    package_root = "astrbot_plugin_napcat_fc/"
+    assert name_list[0] == package_root
+    assert f"{package_root}metadata.yaml" in names
+    assert f"{package_root}main.py" in names
+    assert f"{package_root}README.md" in names
+    assert f"{package_root}napcat_fc/db/database.py" in names
+    assert f"{package_root}TODO.md" not in names
+    assert f"{package_root}CONSTRAINTS.md" not in names
+    assert f"{package_root}待删除.md" not in names
+    assert all(not name.startswith(f"{package_root}report/") for name in names)
+    assert all(not name.startswith(f"{package_root}dist/") for name in names)
 
 
 def test_package_script_reads_metadata_with_optional_utf8_bom():

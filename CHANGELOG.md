@@ -1,5 +1,11 @@
 ﻿# 更新日志
 
+## v1.15.30 - 2026-04-27
+
+- 修复本地安装 zip 为平铺结构时，AstrBot v4.22.x 将 `.gitignore` 等第一个文件误当作解压目录导致安装失败的问题。
+- 打包脚本现在会在 zip 第一项显式写入 `astrbot_plugin_napcat_fc/` 顶层目录，并把已跟踪文件放入该目录下，匹配 AstrBot 上传安装器的解压逻辑。
+- 测试同步校验 zip 第一项必须是插件目录、私有文件和 `report/` 不进入安装包。
+
 ## v1.15.29 - 2026-04-27
 
 - 新增 `scripts/package_plugin.py`，可将 `git ls-files` 中已跟踪的插件文件打包为 AstrBot 本地上传安装使用的 zip。

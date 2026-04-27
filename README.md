@@ -67,6 +67,16 @@
 
 搜索结果序列化同样兼容旧版工具记录对象；如果运行环境中的记录暂时缺少 `namespace`、`risk_level` 或 `requires_confirmation` 字段，会使用安全默认值返回，避免工具发现流程中断。
 
+## 本地打包
+
+运行以下命令可生成 AstrBot 本地插件安装使用的 zip 压缩包：
+
+```powershell
+python scripts/package_plugin.py
+```
+
+脚本只打包 `git ls-files` 返回的已跟踪文件，输出到 `dist/astrbot_plugin_napcat_fc-<version>.zip`。压缩包根目录会直接包含 `metadata.yaml`，符合 AstrBot 上传安装时从解压根目录读取插件元数据的要求。
+
 ## 使用方式
 
 LLM 调用具体接口时使用对应工具，例如 `napcat_send_group_msg`：
@@ -98,4 +108,4 @@ LLM 调用具体接口时使用对应工具，例如 `napcat_send_group_msg`：
 
 ## 开发约束
 
-本项目开发约束见 [CONSTRAINTS.md](CONSTRAINTS.md)。每次功能更新必须同步测试、更新日志、版本号和 README 对应说明。工具发现逻辑的设计与维护记录见 [report/tool_discovery_report.md](report/tool_discovery_report.md)；凡是改动工具发现相关模块或行为，必须同步更新该报告。
+本项目开发约束见 [CONSTRAINTS.md](CONSTRAINTS.md)。每次功能更新必须同步测试、更新日志、版本号和 README 对应说明，并运行 `python scripts/package_plugin.py` 生成对应版本的本地安装 zip。工具发现逻辑的设计与维护记录见 [report/tool_discovery_report.md](report/tool_discovery_report.md)；凡是改动工具发现相关模块或行为，必须同步更新该报告。

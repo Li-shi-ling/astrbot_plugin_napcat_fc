@@ -1,5 +1,11 @@
 ﻿# 更新日志
 
+## v1.15.29 - 2026-04-27
+
+- 新增 `scripts/package_plugin.py`，可将 `git ls-files` 中已跟踪的插件文件打包为 AstrBot 本地上传安装使用的 zip。
+- 打包产物默认输出到 `dist/astrbot_plugin_napcat_fc-<version>.zip`，zip 根目录直接包含 `metadata.yaml`，符合 AstrBot 本地插件上传安装的元数据读取方式。
+- 更新开发约束：每次更改后必须运行打包脚本生成对应版本 zip，README 和测试同步覆盖打包流程。
+
 ## v1.15.28 - 2026-04-27
 
 - 修复 `napcat_send_like` 提示词写有默认值但函数签名仍要求 `times` 必填的问题。

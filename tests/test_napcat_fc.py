@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import json
+import importlib.util
 import re
 import sqlite3
 import subprocess
 import sys
 import asyncio
 import uuid
+import zipfile
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
@@ -761,11 +763,56 @@ def test_tool_discovery_report_and_constraint_are_maintained():
     assert "risk_level 当前只进入结果元数据，不参与搜索排序" in report_text
     assert "report/tool_discovery_report.md" in constraints_text
     assert "一旦改动工具发现相关模块或行为" in constraints_text
+    assert "python scripts/package_plugin.py" in constraints_text
     assert "report/tool_discovery_report.md" in readme_text
+    assert "python scripts/package_plugin.py" in readme_text
     gitignore_lines = (plugin_dir / ".gitignore").read_text(
         encoding="utf-8"
     ).splitlines()
     assert "CONSTRAINTS.md" not in gitignore_lines
+
+
+def test_package_script_builds_astrbot_install_zip_from_tracked_files(tmp_path):
+    plugin_dir = Path(__file__).resolve().parents[1]
+    output_path = tmp_path / "plugin.zip"
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(plugin_dir / "scripts" / "package_plugin.py"),
+            "--output",
+            str(output_path),
+        ],
+        cwd=plugin_dir,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert output_path.exists()
+    with zipfile.ZipFile(output_path) as zf:
+        names = set(zf.namelist())
+
+    assert "metadata.yaml" in names
+    assert "main.py" in names
+    assert "README.md" in names
+    assert "napcat_fc/db/database.py" in names
+    assert "TODO.md" not in names
+    assert all(not name.startswith("dist/") for name in names)
+
+
+def test_package_script_reads_metadata_with_optional_utf8_bom():
+    plugin_dir = Path(__file__).resolve().parents[1]
+    script_path = plugin_dir / "scripts" / "package_plugin.py"
+    spec = importlib.util.spec_from_file_location("package_plugin_script", script_path)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+
+    name, version = module.read_metadata_name_and_version()
+    assert name == "astrbot_plugin_napcat_fc"
+    assert version.startswith("v")
 
 
 def test_hot_update_reloads_internal_napcat_modules(monkeypatch):

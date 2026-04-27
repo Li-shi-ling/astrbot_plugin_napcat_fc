@@ -12,7 +12,7 @@
 - 低价值、危险、重复或更适合隐藏的工具候选记录在 `待删除.md`，用于后续决定删除、禁用或从工具发现中隐藏。
 - 复用 AstrBot 默认接入 NapCat 的 `AiocqhttpMessageEvent` 和当前事件的 `event.bot.api.call_action`，不自建 HTTP 客户端。
 - 初始化时创建工具管理数据库 `napcat_fc_tools.db`，记录工具名、API、能力、参数、平台限制、命名空间、搜索别名、风险等级和启用状态，供动态工具发现使用。
-- 具体 NapCat 工具不作为全局工具常驻注册或暴露，而是在 `on_llm_request(priority=-100)` 阶段按搜索发现结果和数据库状态构造请求级工具并注入到当前请求。
+- 具体 NapCat 工具不作为全局工具常驻注册或暴露，而是在 `on_llm_request(priority=-100)` 阶段按搜索发现结果和数据库状态构造请求级工具并注入到当前请求。聊天记录查询统一暴露为 `napcat_get_msg_history`，合并转发和单条转发统一暴露为 `napcat_send_forward_msg`，底层群/私聊/单条接口只作为内部兼容方法保留。
 - `napcat_search_tools` 搜索工具会一直注入到 aiocqhttp/NapCat 请求中。当当前可用工具列表里没有明确可以完成用户目标的 NapCat 工具时，应先调用它进行工具发现。它支持空格分词并发搜索，并会结合工具名、API、能力说明、命名空间、搜索别名和参数名综合排序；然后排除已发现工具，将剩余最相关的一批工具加入持久化发现队列，并立即注入当前请求后续工具调用。可通过 `result_limit` 控制本次加入工具列表的数量，默认 `3`；如果需要更广泛的工具集合，可以多次用同一个关键词搜索，已发现工具会被跳过，后续搜索会继续补充新候选。
 - 仅系统专属工具名记录在插件类属性 `WINDOWS_TOOL_NAMES`、`LINUX_TOOL_NAMES`、`MAC_TOOL_NAMES` 中；当前只有 OCR 工具属于 Windows 专属。
 - 信息获取类接口会通过函数 `return` 把 NapCat API 响应返回给 LLM，不直接向当前聊天发送消息。
@@ -20,6 +20,7 @@
 - NapCat API 业务失败会返回 `api_error` JSON 给 LLM，包含接口名、错误类型、错误消息和实际 payload，便于模型调整参数后重试。
 - 当前 NapCat 版本中 `/translate_en2zh` 存在问题，老版本 NapCat 中 `/get_mini_app_ark` 不兼容；`napcat_translate_en2zh` 和 `napcat_get_mini_app_ark` 已临时禁用，不会进入工具搜索、动态发现或请求注入。
 - Ark 分享类接口（`napcat_send_group_ark_share`、`napcat_send_ark_share`、`napcat_arksharegroup`、`napcat_arksharepeer`）会自动获取卡片 JSON 并发送，不需要二次调用消息发送工具。可通过 `send_group_id` 指定发送群号，或通过 `send_user_id` 指定发送用户；两者都不填时默认发送到当前会话。自动发送兼容 NapCat 返回顶层 `data` 字段、直接 Ark JSON 字符串或直接 Ark JSON 对象。
+- 合并转发聊天记录时，优先调用 `napcat_get_msg_history` 获取群聊或私聊历史消息，再把返回的 `message_id` 或 `message_ids` 传给 `napcat_send_forward_msg`；该工具会自动组成 `messages=[{"type":"node","data":{"id": message_id}}]` 并按当前会话或显式目标发送。
 
 ## 会话默认参数
 

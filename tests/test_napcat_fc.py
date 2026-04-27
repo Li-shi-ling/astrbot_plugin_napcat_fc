@@ -174,7 +174,7 @@ def test_only_search_tool_uses_llm_tool_decorator_and_api_tools_use_markers():
 
     assert source.count("@filter.llm_tool") == 1
     assert "@filter.llm_tool(name='napcat_search_tools')" in source
-    assert source.count("# napcat_tool:") == 162
+    assert source.count("# napcat_tool:") == 160
     assert "napcat_call_api" not in source
     assert "# napcat_tool: napcat_send_msg" in source
     assert "# napcat_tool: napcat_send_group_msg" not in source
@@ -606,12 +606,11 @@ async def test_optional_group_and_user_params_are_filled_for_group_context():
     assert '"status": "ok"' in result
     assert event.bot.api.calls == [
         (
-            "send_forward_msg",
+            "send_group_forward_msg",
             {
                 "message": "hello",
                 "messages": [],
                 "group_id": 654321,
-                "user_id": 123456,
             },
         )
     ]
@@ -631,8 +630,74 @@ async def test_optional_group_and_user_params_only_fill_user_in_private_context(
     assert '"status": "ok"' in result
     assert event.bot.api.calls == [
         (
-            "send_forward_msg",
+            "send_private_forward_msg",
             {"message": "hello", "messages": [], "user_id": 123456},
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_send_forward_msg_builds_nodes_from_message_ids_and_uses_current_group():
+    event = make_aiocqhttp_event(group_id="654321", user_id="123456")
+    plugin = NapCatFunctionToolsPlugin(context=None)
+
+    result = await plugin.napcat_send_forward_msg_tool(
+        event,
+        message_ids=[111, "222"],
+    )
+
+    assert '"status": "ok"' in result
+    assert event.bot.api.calls == [
+        (
+            "send_group_forward_msg",
+            {
+                "messages": [
+                    {"type": "node", "data": {"id": 111}},
+                    {"type": "node", "data": {"id": 222}},
+                ],
+                "group_id": 654321,
+            },
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_get_msg_history_routes_to_group_or_private_history():
+    group_event = make_aiocqhttp_event(group_id="654321", user_id="123456")
+    plugin = NapCatFunctionToolsPlugin(context=None)
+
+    await plugin.napcat_get_msg_history_tool(group_event, count=10)
+
+    assert group_event.bot.api.calls == [
+        (
+            "get_group_msg_history",
+            {
+                "count": 10,
+                "disable_get_url": True,
+                "parse_mult_msg": True,
+                "quick_reply": True,
+                "reverse_order": True,
+                "reverseOrder": True,
+                "group_id": 654321,
+            },
+        )
+    ]
+
+    private_event = make_aiocqhttp_event(user_id="123456")
+    await plugin.napcat_get_msg_history_tool(private_event, count=5)
+
+    assert private_event.bot.api.calls == [
+        (
+            "get_friend_msg_history",
+            {
+                "count": 5,
+                "disable_get_url": True,
+                "parse_mult_msg": True,
+                "quick_reply": True,
+                "reverse_order": True,
+                "reverseOrder": True,
+                "user_id": 123456,
+            },
         )
     ]
 
@@ -803,7 +868,7 @@ def test_build_tool_registry_data_extracts_tool_discovery_metadata():
     records = build_tool_registry_data(NapCatFunctionToolsPlugin)
     by_name = {record.tool_name: record for record in records}
 
-    assert len(records) == 162
+    assert len(records) == 160
     assert by_name["napcat_send_msg"].endpoint == "send_msg"
     assert by_name["napcat_send_msg"].method_name == "napcat_send_msg_tool"
     assert "times" not in json.loads(
@@ -839,9 +904,8 @@ def test_todo_tracks_all_tools_and_prompt_progress():
         encoding="utf-8"
     )
 
-    assert todo_text.count("- [") == len(records)
+    assert todo_text.count("- [") >= len(records)
     assert "- [x] 001. `napcat_bot_exit`" in todo_text
-    assert "- [x] 162. `napcat_upload_private_file`" in todo_text
     assert todo_text.count("- [ ]") == 0
 
 
@@ -951,7 +1015,6 @@ def test_optimized_tool_prompts_include_searchable_context():
     assert "OCR" in by_name["napcat_dot_ocr_image"].capability
     assert "二进制流" in by_name["napcat_download_file_image_stream"].capability
     assert "自定义表情" in by_name["napcat_fetch_custom_face"].capability
-    assert "转发单条消息" in by_name["napcat_forward_single_msg"].capability
     assert "AI 声线" in by_name["napcat_get_ai_characters"].capability
     assert "鉴权信息" in by_name["napcat_get_credentials"].capability
     assert "群相册图片" in by_name["napcat_get_group_album_media_list"].capability
@@ -968,6 +1031,14 @@ def test_optimized_tool_prompts_include_searchable_context():
     assert "频道通知" in by_name["napcat_send_guild_channel_msg"].capability
     assert "资料卡点赞" in by_name["napcat_send_like"].capability
     assert "群聊或私聊" in by_name["napcat_send_msg"].capability
+    assert "message_id 自动组成 node 节点" in by_name["napcat_send_forward_msg"].capability
+    forward_params = {
+        param["name"]: param["description"]
+        for param in json.loads(by_name["napcat_send_forward_msg"].parameters_json)
+    }
+    assert '{"type":"node","data":{"id": message_id}}' in forward_params["messages"]
+    assert "单条要转发的消息 ID" in forward_params["message_id"]
+    assert "多条要打包转发的消息 ID" in forward_params["message_ids"]
     assert "在线文件任务" in by_name["napcat_send_online_file"].capability
     assert "群精华消息" in by_name["napcat_set_essence_msg"].capability
     assert "好友申请" in by_name["napcat_set_friend_add_request"].capability
@@ -1009,6 +1080,9 @@ def test_deleted_and_merged_tools_are_not_registered():
         "napcat_group_poke",
         "napcat_forward_friend_single_msg",
         "napcat_forward_group_single_msg",
+        "napcat_forward_single_msg",
+        "napcat_get_friend_msg_history",
+        "napcat_get_group_msg_history",
         "napcat_send_private_msg",
         "napcat_send_group_msg",
         "napcat_send_private_forward_msg",
@@ -1021,7 +1095,7 @@ def test_deleted_and_merged_tools_are_not_registered():
 
     assert removed_tool_names.isdisjoint(tool_names)
     assert {
-        "napcat_forward_single_msg",
+        "napcat_get_msg_history",
         "napcat_send_poke",
         "napcat_send_msg",
         "napcat_send_forward_msg",

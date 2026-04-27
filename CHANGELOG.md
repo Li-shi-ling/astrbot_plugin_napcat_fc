@@ -1,5 +1,18 @@
 ﻿# 更新日志
 
+## v1.15.36 - 2026-04-27
+
+- 合并转发工具入口：`napcat_forward_single_msg` 不再进入工具发现，单条消息转发、多条消息合并转发、群聊/私聊目标选择统一由 `napcat_send_forward_msg` 处理。
+- `napcat_send_forward_msg` 新增 `message_id` 和 `message_ids` 可选参数；未传 `messages` 时会自动构造 OneBot `node` 节点，并按 `message_type`、`group_id`、`user_id` 或当前会话路由到底层群/私聊合并转发接口。
+- 合并历史消息查询入口：新增 `napcat_get_msg_history`，统一按 `message_type`、`group_id`、`user_id` 或当前会话调用群历史或好友历史接口；`napcat_get_group_msg_history` 和 `napcat_get_friend_msg_history` 不再进入工具发现。
+- 工具总数调整为 160，并更新回归测试覆盖新统一入口、隐藏旧入口和工具元数据。
+
+## v1.15.35 - 2026-04-27
+
+- 优化合并转发相关工具提示词：`napcat_send_forward_msg`、`napcat_send_group_forward_msg`、`napcat_send_private_forward_msg` 明确说明可将历史消息返回的 `message_id` 组成 `node` 节点后批量打包转发。
+- 调整 `napcat_forward_single_msg` 能力描述，强调它只转发单条消息，不适合批量聊天记录或多条消息合并转发，降低聊天记录场景误选概率。
+- 新增工具元数据回归测试，固定合并转发 node 节点说明和单条转发边界说明。
+
 ## v1.15.34 - 2026-04-27
 
 - 新增配置项 `fallback_invalid_context_ids`，默认开启；当 `group_id`、`user_id`、`self_id`、Ark 自动发送目标 `send_group_id`、`send_user_id` 等上下文 ID 参数小于 6 位或不是纯数字时，会回退为当前会话默认值。

@@ -58,7 +58,7 @@ from napcat_fc.tool_registry import build_tool_registry_data
     "astrbot_plugin_napcat_fc",
     "Soulter / AstrBot contributors",
     "将 NapCat / OneBot / go-cqhttp API 注册为 AstrBot 函数工具。",
-    "1.15.34",
+    "1.15.36",
 )
 class NapCatFunctionToolsPlugin(Star):
     SEARCH_TOOL_NAME = "napcat_search_tools"
@@ -87,7 +87,7 @@ class NapCatFunctionToolsPlugin(Star):
         self.fallback_invalid_context_ids = bool(
             self.config.get("fallback_invalid_context_ids", True)
         )
-        self.tool_count = 162
+        self.tool_count = 160
         self.tool_registry_records = build_tool_registry_data(type(self))
         self.tool_registry_records_by_name = {
             record.tool_name: record for record in self.tool_registry_records
@@ -2076,7 +2076,6 @@ Returns:
         payload['message_id'] = message_id
         return await self._call_napcat_api(event, 'fetch_emoji_like', payload)
 
-    # napcat_tool: napcat_forward_single_msg
     async def napcat_forward_single_msg_tool(
         self,
         event: AstrMessageEvent,
@@ -2085,7 +2084,7 @@ Returns:
         group_id: int = None,
         user_id: int = None,
     ):
-        """转发单条消息到群聊或私聊，适合把当前消息、回复消息或历史消息转发给指定群或好友
+        """单条消息快速转发到群聊或私聊，只处理一个 message_id，不适合批量聊天记录或多条消息合并转发
 
 Args:
     message_id(int): 可选，消息ID。默认优先使用被回复消息 ID；未回复或解析失败时使用当前消息 ID。
@@ -2539,7 +2538,6 @@ Returns:
             payload['no_cache'] = no_cache
         return await self._call_napcat_api(event, 'get_friend_list', payload)
 
-    # napcat_tool: napcat_get_friend_msg_history
     async def napcat_get_friend_msg_history_tool(
         self,
         event: AstrMessageEvent,
@@ -2583,6 +2581,64 @@ Returns:
         if message_seq is not None:
             payload['message_seq'] = message_seq
         return await self._call_napcat_api(event, 'get_friend_msg_history', payload)
+
+    # napcat_tool: napcat_get_msg_history
+    async def napcat_get_msg_history_tool(
+        self,
+        event: AstrMessageEvent,
+        count: int = 20,
+        message_type: str = None,
+        group_id: int = None,
+        user_id: int = None,
+        message_seq: int = None,
+        disable_get_url: bool = True,
+        parse_mult_msg: bool = True,
+        quick_reply: bool = True,
+        reverse_order: bool = True,
+        reverseOrder: bool = True,
+    ):
+        """获取群聊或私聊历史聊天记录，适合查询聊天上下文、近期消息、message_id 和合并转发前选取消息
+
+Args:
+    count(int): 可选，获取消息数量，默认 20。
+    message_type(str): 可选，历史类型，支持 `group` 或 `private`；不填时优先按 group_id/user_id 和当前会话判断。
+    group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会按私聊历史处理。
+    user_id(int): 可选，用户 QQ。默认使用当前消息发送者的用户 ID。
+    message_seq(int): 可选，起始消息序号；不填时获取最近消息。
+    disable_get_url(bool): 可选，是否禁用获取 URL，默认 true。
+    parse_mult_msg(bool): 可选，是否解析合并消息，默认 true。
+    quick_reply(bool): 可选，是否快速回复，默认 true。
+    reverse_order(bool): 可选，是否反向排序，默认 true。
+    reverseOrder(bool): 可选，是否反向排序旧字段，默认 true。
+
+Returns:
+    str: 返回 API 响应的 JSON 字符串，通常包含 data.messages；这些消息的 message_id 可传给 napcat_send_forward_msg 打包转发。"""
+        normalized_type = (message_type or "").lower()
+        payload: dict = {
+            "count": count,
+            "disable_get_url": disable_get_url,
+            "parse_mult_msg": parse_mult_msg,
+            "quick_reply": quick_reply,
+            "reverse_order": reverse_order,
+            "reverseOrder": reverseOrder,
+        }
+        if message_seq is not None:
+            payload["message_seq"] = message_seq
+
+        if normalized_type in {"group", "guild"} or group_id is not None:
+            payload["group_id"] = group_id
+            return await self._call_napcat_api(event, "get_group_msg_history", payload)
+
+        if normalized_type in {"private", "friend"} or user_id is not None:
+            payload["user_id"] = user_id
+            return await self._call_napcat_api(event, "get_friend_msg_history", payload)
+
+        if self._get_current_group_id_or_none(event) is not None:
+            payload["group_id"] = group_id
+            return await self._call_napcat_api(event, "get_group_msg_history", payload)
+
+        payload["user_id"] = user_id
+        return await self._call_napcat_api(event, "get_friend_msg_history", payload)
 
     # napcat_tool: napcat_get_friends_with_category
     async def napcat_get_friends_with_category_tool(
@@ -2880,7 +2936,6 @@ Returns:
             payload['no_cache'] = no_cache
         return await self._call_napcat_api(event, 'get_group_member_list', payload)
 
-    # napcat_tool: napcat_get_group_msg_history
     async def napcat_get_group_msg_history_tool(
         self,
         event: AstrMessageEvent,
@@ -3909,8 +3964,10 @@ Returns:
     async def napcat_send_forward_msg_tool(
         self,
         event: AstrMessageEvent,
-        message: str,
-        messages: list,
+        message: str = None,
+        messages: list = None,
+        message_id: int = None,
+        message_ids: list = None,
         group_id: int = None,
         user_id: int = None,
         auto_escape: str = None,
@@ -3921,34 +3978,48 @@ Returns:
         summary: str = None,
         timeout: int = None,
     ):
-        """发送合并转发消息，适合构造聊天记录、转发多条消息、发送节点列表和聚合内容
+        """统一发送合并转发和单条转发，适合把历史消息 message_id 自动组成 node 节点后发到群聊或私聊
 
 Args:
-    message(str): 必填，See source API docs。
-    messages(list): 必填，See source API docs。
+    message(str): 可选，兼容字段；发送合并转发时通常传空字符串或简短标题，核心内容放在 messages。
+    messages(list): 可选，合并转发节点列表。可直接传 `[{"type":"node","data":{"id": message_id}}]`；如果已传 message_id 或 message_ids，可省略。
+    message_id(int): 可选，单条要转发的消息 ID。省略 messages 和 message_ids 时，默认优先使用被回复消息 ID，再回退当前消息 ID。
+    message_ids(list): 可选，多条要打包转发的消息 ID 列表；工具会自动转为 node 节点列表。
     auto_escape(str): 可选，是否作为纯文本发送。
-    group_id(int): 可选，群号。
-    message_type(str): 可选，消息类型 (private/group)。
+    group_id(int): 可选，目标群号。默认在群聊中使用当前群号。
+    message_type(str): 可选，目标类型，支持 `group` 或 `private`；不填时优先按 group_id/user_id 和当前会话判断。
     news(list): 可选，合并转发新闻。
     prompt(str): 可选，合并转发提示。
     source(str): 可选，合并转发来源。
     summary(str): 可选，合并转发摘要。
     timeout(int): 可选，自定义发送超时(毫秒)，覆盖自动计算值。
-    user_id(int): 可选，用户QQ。
+    user_id(int): 可选，目标用户 QQ。默认在私聊中使用当前消息发送者 ID。
 
 Returns:
     str: 返回 API 响应的 JSON 字符串。"""
         payload: dict = {}
+        normalized_type = (message_type or "").lower()
+        if messages is None:
+            ids = []
+            if message_ids:
+                ids.extend(message_ids)
+            elif message_id is not None:
+                ids.append(message_id)
+            else:
+                default_message_id = self._get_default_message_id(event)
+                if default_message_id:
+                    ids.append(default_message_id)
+            messages = [
+                {"type": "node", "data": {"id": int(item) if str(item).isdigit() else item}}
+                for item in ids
+            ]
+
         if message is not None:
             payload['message'] = message
         if messages is not None:
             payload['messages'] = messages
         if auto_escape is not None:
             payload['auto_escape'] = auto_escape
-        if group_id is not None:
-            payload['group_id'] = group_id
-        if message_type is not None:
-            payload['message_type'] = message_type
         if news is not None:
             payload['news'] = news
         if prompt is not None:
@@ -3959,9 +4030,17 @@ Returns:
             payload['summary'] = summary
         if timeout is not None:
             payload['timeout'] = timeout
-        if user_id is not None:
-            payload['user_id'] = user_id
-        return await self._call_napcat_api(event, 'send_forward_msg', payload)
+        if normalized_type in {"group", "guild"} or group_id is not None:
+            payload["group_id"] = group_id
+            return await self._call_napcat_api(event, "send_group_forward_msg", payload)
+        if normalized_type in {"private", "friend"} or user_id is not None:
+            payload["user_id"] = user_id
+            return await self._call_napcat_api(event, "send_private_forward_msg", payload)
+        if self._get_current_group_id_or_none(event) is not None:
+            payload["group_id"] = group_id
+            return await self._call_napcat_api(event, "send_group_forward_msg", payload)
+        payload["user_id"] = user_id
+        return await self._call_napcat_api(event, "send_private_forward_msg", payload)
 
     # napcat_tool: napcat_send_group_ai_record
     async def napcat_send_group_ai_record_tool(
@@ -4026,12 +4105,12 @@ Returns:
         summary: str = None,
         timeout: int = None,
     ):
-        """发送群合并转发消息，适合在群聊发布聊天记录、多节点消息和聚合转发内容
+        """发送群合并转发聊天记录，适合把历史消息 message_id 转成 node 节点后发到群聊
 
 Args:
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
-    message(str): 必填，See source API docs。
-    messages(list): 必填，自定义转发消息, 具体看 [CQcodeopen in new window](https://docs.go-cqhttp.org/cqcode/#%E5%90%88%E5%B9%B6%E8%BD%AC%E5%8F%91%E6%B6%88%E6%81%AF%E8%8A%82%E7%82%B9)。
+    message(str): 必填，兼容字段；发送群合并转发时通常传空字符串或简短标题，核心内容放在 messages。
+    messages(list): 必填，合并转发节点列表。转发群历史消息时先调用 `napcat_get_group_msg_history` 获取 message_id，再传 `[{"type":"node","data":{"id": message_id}}]`；多条消息就传多个 node。
     auto_escape(str): 可选，是否作为纯文本发送。
     message_type(str): 可选，消息类型 (private/group)。
     news(list): 可选，合并转发新闻。
@@ -4397,11 +4476,11 @@ Returns:
         summary: str = None,
         timeout: int = None,
     ):
-        """发送私聊合并转发消息，适合向好友发送聊天记录、多节点消息和聚合转发内容
+        """发送私聊合并转发聊天记录，适合把历史消息 message_id 转成 node 节点后发给好友
 
 Args:
-    message(str): 必填，See source API docs。
-    messages(list): 必填，自定义转发消息, 具体看 [CQcodeopen in new window](https://docs.go-cqhttp.org/cqcode/#%E5%90%88%E5%B9%B6%E8%BD%AC%E5%8F%91%E6%B6%88%E6%81%AF%E8%8A%82%E7%82%B9)。
+    message(str): 必填，兼容字段；发送私聊合并转发时通常传空字符串或简短标题，核心内容放在 messages。
+    messages(list): 必填，合并转发节点列表。转发历史消息时先调用历史消息工具获取 message_id，再传 `[{"type":"node","data":{"id": message_id}}]`；多条消息就传多个 node。
     user_id(int): 可选，好友QQ号。默认使用当前消息发送者的用户 ID。
     auto_escape(str): 可选，是否作为纯文本发送。
     group_id(int): 可选，群号。

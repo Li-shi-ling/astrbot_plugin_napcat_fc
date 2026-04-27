@@ -58,7 +58,7 @@ from napcat_fc.tool_registry import build_tool_registry_data
     "astrbot_plugin_napcat_fc",
     "Soulter / AstrBot contributors",
     "将 NapCat / OneBot / go-cqhttp API 注册为 AstrBot 函数工具。",
-    "1.15.36",
+    "1.15.37",
 )
 class NapCatFunctionToolsPlugin(Star):
     SEARCH_TOOL_NAME = "napcat_search_tools"
@@ -1037,6 +1037,14 @@ Returns:
             return None
         return int(group_id) if str(group_id).isdigit() else group_id
 
+    def _get_current_user_id_or_none(self, event: AstrMessageEvent):
+        if not isinstance(event, AiocqhttpMessageEvent):
+            return None
+        user_id = event.get_sender_id()
+        if not user_id:
+            return None
+        return int(user_id) if str(user_id).isdigit() else user_id
+
     def _normalize_contextual_target_params(
         self,
         event: AiocqhttpMessageEvent,
@@ -1082,6 +1090,22 @@ Returns:
             if not group_id:
                 return "当前消息不是群聊事件，无法自动获取 group_id。请让用户提供群号，或改用私聊相关工具。"
             payload["group_id"] = int(group_id) if str(group_id).isdigit() else group_id
+
+        current_group_id = self._get_current_group_id_or_none(event)
+        current_user_id = self._get_current_user_id_or_none(event)
+        if (
+            self.fallback_invalid_context_ids
+            and "group_id" in payload
+            and current_group_id is not None
+            and current_user_id is not None
+            and self._normalize_numeric_id(payload.get("group_id")) == current_user_id
+            and current_group_id != current_user_id
+        ):
+            logger.warning(
+                "NapCat 工具参数 group_id 等于当前消息发送者 user_id，"
+                "疑似把用户号误填为群号，已回退为当前群号。"
+            )
+            payload["group_id"] = current_group_id
 
         if (
             "user_id" in payload
@@ -2604,7 +2628,7 @@ Args:
     message_type(str): 可选，历史类型，支持 `group` 或 `private`；不填时优先按 group_id/user_id 和当前会话判断。
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会按私聊历史处理。
     user_id(int): 可选，用户 QQ。默认使用当前消息发送者的用户 ID。
-    message_seq(int): 可选，起始消息序号；不填时获取最近消息。
+    message_seq(int): 可选，起始消息序号；不填时使用 0 获取最近消息，避免 NapCat 旧版本收到 undefined。
     disable_get_url(bool): 可选，是否禁用获取 URL，默认 true。
     parse_mult_msg(bool): 可选，是否解析合并消息，默认 true。
     quick_reply(bool): 可选，是否快速回复，默认 true。
@@ -2622,8 +2646,7 @@ Returns:
             "reverse_order": reverse_order,
             "reverseOrder": reverseOrder,
         }
-        if message_seq is not None:
-            payload["message_seq"] = message_seq
+        payload["message_seq"] = 0 if message_seq is None else message_seq
 
         if normalized_type in {"group", "guild"} or group_id is not None:
             payload["group_id"] = group_id

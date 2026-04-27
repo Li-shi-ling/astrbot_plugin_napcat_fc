@@ -1,5 +1,11 @@
 ﻿# 更新日志
 
+## v1.15.37 - 2026-04-27
+
+- 修复 `napcat_get_msg_history` 在未传 `message_seq` 时，部分 NapCat 版本把缺省起始消息处理为 `undefined` 并返回“消息 undefined 不存在”的问题；现在默认传入 `message_seq=0` 获取最近消息。
+- 增强上下文 ID 容错：当群聊工具收到的 `group_id` 等于当前消息发送者 `user_id` 时，判定为 LLM 把用户号误填为群号，自动回退当前群号并输出警告。
+- 新增回归测试覆盖历史消息默认 `message_seq`、误填 `group_id` 自动修正，以及统一历史工具调用链。
+
 ## v1.15.36 - 2026-04-27
 
 - 合并转发工具入口：`napcat_forward_single_msg` 不再进入工具发现，单条消息转发、多条消息合并转发、群聊/私聊目标选择统一由 `napcat_send_forward_msg` 处理。
@@ -349,3 +355,8 @@
 - 将 NapCat / OneBot HTTP API 批量注册为 AstrBot LLM 函数工具。
 - 新增插件配置 schema、开发约束文件和 pytest 测试。
 - 将 README 和元数据改为中文展示内容。
+## v1.15.37 - 2026-04-27
+
+- 修复 `napcat_get_msg_history` 在未传 `message_seq` 时，部分 NapCat 版本把缺省起始消息处理为 `undefined` 并返回“消息 undefined 不存在”的问题；现在默认传入 `message_seq=0` 获取最近消息。
+- 增强上下文 ID 容错：当群聊工具收到的 `group_id` 等于当前消息发送者 `user_id` 时，判定为 LLM 把用户号误填为群号，自动回退当前群号并输出警告。
+- 新增回归测试覆盖历史消息默认 `message_seq`、误填 `group_id` 自动修正，以及统一历史工具调用链。

@@ -8,7 +8,7 @@
 - 每个发现到的用户 API 都有一个 `# napcat_tool: napcat_<接口名>` 元数据标记和对应异步方法，供工具数据库生成、搜索和按需构造使用。
 - 具体接口工具使用字段级参数，例如 `group_id`、`user_id`、`message`，不要求 LLM 传入统一 `payload`。
 - 工具能力提示保持为面向 LLM 的中文说明，不在能力描述中重复 `能力:`、API 路径或 Markdown 表格；提示应覆盖动作、对象和常见搜索词，便于 `napcat_search_tools` 发现对应工具。
-- 工具提示词优化进度记录在 `TODO.md`；当前保留注册的 162 个工具已全部完成提示词优化。
+- 工具提示词优化进度记录在 `TODO.md`；当前保留注册的 160 个工具已全部完成提示词优化。
 - 低价值、危险、重复或更适合隐藏的工具候选记录在 `待删除.md`，用于后续决定删除、禁用或从工具发现中隐藏。
 - 复用 AstrBot 默认接入 NapCat 的 `AiocqhttpMessageEvent` 和当前事件的 `event.bot.api.call_action`，不自建 HTTP 客户端。
 - 初始化时创建工具管理数据库 `napcat_fc_tools.db`，记录工具名、API、能力、参数、平台限制、命名空间、搜索别名、风险等级和启用状态，供动态工具发现使用。
@@ -35,6 +35,8 @@
 如果在私聊中调用需要群号的群聊工具，且没有显式提供 `group_id`，工具不会请求 NapCat API，而是返回 LLM 可读的 JSON 提示，说明当前消息不是群聊事件并要求提供群号或改用私聊工具。
 
 对于所有同时具有群号和用户号输入语义的工具，插件会在调用 NapCat 前统一归一化参数：未提供 `user_id` 或传入 `0` 时使用当前消息发送者；群聊中未提供 `group_id` 或传入 `0` 时使用当前群号；私聊中不会为可选群号强行补值。`target_id` 这类目标 QQ 别名会在存在 `user_id` 语义的工具中自动映射为 `user_id`，不会把 `target_id` 原样传给 NapCat。
+
+开启 `fallback_invalid_context_ids` 时，如果群聊工具收到的 `group_id` 恰好等于当前消息发送者 `user_id`，插件会判定为 LLM 把用户号误填为群号，自动回退为当前群号并输出警告。`napcat_get_msg_history` 在未传 `message_seq` 时会自动使用 `0` 获取最近消息，避免旧版 NapCat 把缺省值处理为 `undefined`。
 
 ## 配置
 

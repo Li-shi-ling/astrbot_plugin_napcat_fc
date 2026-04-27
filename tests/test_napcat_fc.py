@@ -319,6 +319,21 @@ def test_context_defaults_fallback_invalid_short_ids_and_warn(monkeypatch):
     assert all("已回退为当前会话默认值" in item for item in warnings)
 
 
+def test_context_defaults_fallback_group_id_when_user_id_is_misused(monkeypatch):
+    warnings = []
+    monkeypatch.setattr("main.logger.warning", warnings.append)
+    event = make_aiocqhttp_event(group_id="654321", user_id="123456", message_id="789")
+    plugin = NapCatFunctionToolsPlugin(context=None)
+    payload = {"group_id": 123456}
+
+    assert plugin._fill_context_defaults(event, payload) is None
+
+    assert payload == {"group_id": 654321}
+    assert warnings == [
+        "NapCat 工具参数 group_id 等于当前消息发送者 user_id，疑似把用户号误填为群号，已回退为当前群号。"
+    ]
+
+
 def test_context_defaults_can_disable_invalid_short_id_fallback(monkeypatch):
     warnings = []
     monkeypatch.setattr("main.logger.warning", warnings.append)
@@ -678,6 +693,7 @@ async def test_get_msg_history_routes_to_group_or_private_history():
                 "quick_reply": True,
                 "reverse_order": True,
                 "reverseOrder": True,
+                "message_seq": 0,
                 "group_id": 654321,
             },
         )
@@ -696,9 +712,44 @@ async def test_get_msg_history_routes_to_group_or_private_history():
                 "quick_reply": True,
                 "reverse_order": True,
                 "reverseOrder": True,
+                "message_seq": 0,
                 "user_id": 123456,
             },
         )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_get_msg_history_repairs_user_id_misused_as_group_id(monkeypatch):
+    warnings = []
+    monkeypatch.setattr("main.logger.warning", warnings.append)
+    event = make_aiocqhttp_event(group_id="654321", user_id="123456")
+    plugin = NapCatFunctionToolsPlugin(context=None)
+
+    await plugin.napcat_get_msg_history_tool(
+        event,
+        count=10,
+        group_id=123456,
+        message_type="group",
+    )
+
+    assert event.bot.api.calls == [
+        (
+            "get_group_msg_history",
+            {
+                "count": 10,
+                "disable_get_url": True,
+                "parse_mult_msg": True,
+                "quick_reply": True,
+                "reverse_order": True,
+                "reverseOrder": True,
+                "message_seq": 0,
+                "group_id": 654321,
+            },
+        )
+    ]
+    assert warnings == [
+        "NapCat 工具参数 group_id 等于当前消息发送者 user_id，疑似把用户号误填为群号，已回退为当前群号。"
     ]
 
 

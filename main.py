@@ -58,7 +58,7 @@ from napcat_fc.tool_registry import build_tool_registry_data
     "astrbot_plugin_napcat_fc",
     "Soulter / AstrBot contributors",
     "将 NapCat / OneBot / go-cqhttp API 注册为 AstrBot 函数工具。",
-    "1.15.31",
+    "1.15.32",
 )
 class NapCatFunctionToolsPlugin(Star):
     SEARCH_TOOL_NAME = "napcat_search_tools"
@@ -662,11 +662,13 @@ Returns:
             return
         removed_count = 0
         for tool_name in self.napcat_tool_names:
-            before_count = len(getattr(tool_mgr, "func_list", ()))
-            remove_func(tool_name)
-            after_count = len(getattr(tool_mgr, "func_list", ()))
-            if after_count < before_count:
-                removed_count += 1
+            while True:
+                before_count = len(getattr(tool_mgr, "func_list", ()))
+                remove_func(tool_name)
+                after_count = len(getattr(tool_mgr, "func_list", ()))
+                if after_count >= before_count:
+                    break
+                removed_count += before_count - after_count
         self._debug_log("global_tools_remove:done", removed_count=removed_count)
 
     def _unload_request_scope_napcat_tools(self, req: ProviderRequest | None):

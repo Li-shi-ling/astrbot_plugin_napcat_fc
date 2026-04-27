@@ -1,5 +1,11 @@
 ﻿# 更新日志
 
+## v1.15.32 - 2026-04-27
+
+- 修复旧版本热更新残留清理不彻底的问题：AstrBot 的 `remove_func` 每次只删除一个同名工具，插件现在会循环删除所有重复残留的 `napcat_*` 全局工具。
+- 测试桩 `FakeToolManager.remove_func` 调整为贴近 AstrBot 行为，并新增重复残留清理回归测试。
+- 新增 `napcat_search_tools_tool` 在没有当前请求上下文时的回归测试，固定早退错误返回结构。
+
 ## v1.15.31 - 2026-04-27
 
 - 动态注入 NapCat 工具时补全 JSON Schema 的 `required` 字段，避免 AstrBot `spec_to_func` 默认不声明必填参数导致 LLM 把所有参数都视为可选。

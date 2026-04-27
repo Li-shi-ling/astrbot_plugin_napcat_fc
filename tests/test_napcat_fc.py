@@ -111,7 +111,10 @@ class FakeToolManager:
         self.func_list.append(self.spec_to_func(name, func_args, desc, handler))
 
     def remove_func(self, name):
-        self.func_list = [tool for tool in self.func_list if tool.name != name]
+        for index, tool in enumerate(self.func_list):
+            if tool.name == name:
+                self.func_list.pop(index)
+                break
 
 
 class FakeContext:
@@ -1338,6 +1341,21 @@ def test_remove_registered_napcat_tools_removes_global_tool_residue():
     assert other_tool.active is True
 
 
+def test_remove_registered_napcat_tools_removes_duplicate_global_residue():
+    first_napcat_tool = make_function_tool("napcat_send_msg")
+    second_napcat_tool = make_function_tool("napcat_send_msg")
+    other_tool = make_function_tool("other_tool")
+    plugin = NapCatFunctionToolsPlugin(
+        context=FakeContext([first_napcat_tool, other_tool, second_napcat_tool])
+    )
+
+    plugin._remove_registered_napcat_tools()
+
+    tool_manager = plugin.context.get_llm_tool_manager()
+    assert tool_manager.get_func("napcat_send_msg") is None
+    assert tool_manager.get_func("other_tool") is other_tool
+
+
 def test_debug_log_is_gated_by_config(monkeypatch):
     captured = []
     monkeypatch.setattr("main.logger.debug", captured.append)
@@ -1674,6 +1692,18 @@ async def test_registered_search_tool_uses_remembered_request_context():
             path = Path(str(db_path) + suffix)
             if path.exists():
                 path.unlink()
+
+
+@pytest.mark.asyncio
+async def test_registered_search_tool_returns_error_without_remembered_request_context():
+    event = make_aiocqhttp_event(user_id="123456")
+    plugin = NapCatFunctionToolsPlugin(context=FakeContext([]))
+
+    result = await plugin.napcat_search_tools_tool(event, keyword="send msg")
+    payload = json.loads(result)
+
+    assert payload["ok"] is False
+    assert "当前 LLM 请求上下文" in payload["message"]
 
 
 @pytest.mark.asyncio

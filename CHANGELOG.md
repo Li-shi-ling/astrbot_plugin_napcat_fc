@@ -1,5 +1,63 @@
 ﻿# 更新日志
 
+## v1.15.32 - 2026-04-27
+
+- 修复旧版本热更新残留清理不彻底的问题：AstrBot 的 `remove_func` 每次只删除一个同名工具，插件现在会循环删除所有重复残留的 `napcat_*` 全局工具。
+- 测试桩 `FakeToolManager.remove_func` 调整为贴近 AstrBot 行为，并新增重复残留清理回归测试。
+- 新增 `napcat_search_tools_tool` 在没有当前请求上下文时的回归测试，固定早退错误返回结构。
+
+## v1.15.31 - 2026-04-27
+
+- 动态注入 NapCat 工具时补全 JSON Schema 的 `required` 字段，避免 AstrBot `spec_to_func` 默认不声明必填参数导致 LLM 把所有参数都视为可选。
+- `napcat_search_tools` 现在只将 `keyword` 标为必填，`result_limit` 保持可选；具体 NapCat 工具按函数签名生成必填参数列表。
+- 修复 `napcat_get_group_honor_info` 的 `type` 参数文档标注为可选但函数签名没有默认值的问题。
+- NapCat API 返回业务失败或 aiocqhttp 抛出异常时改为返回 `api_error` JSON 给 LLM，避免 `ERR_GROUP_IS_DELETED` 等接口失败升级为 AstrBot 工具执行警告。
+- 新增回归测试，覆盖动态工具 schema 必填参数、搜索工具 schema 必填参数，以及所有文档标注可选的参数都必须有 Python 默认值。
+
+## v1.15.30 - 2026-04-27
+
+- 修复本地安装 zip 为平铺结构时，AstrBot v4.22.x 将 `.gitignore` 等第一个文件误当作解压目录导致安装失败的问题。
+- 打包脚本现在会在 zip 第一项显式写入 `astrbot_plugin_napcat_fc/` 顶层目录，并把已跟踪文件放入该目录下，匹配 AstrBot 上传安装器的解压逻辑。
+- 测试同步校验 zip 第一项必须是插件目录、私有文件和 `report/` 不进入安装包。
+
+## v1.15.29 - 2026-04-27
+
+- 新增 `scripts/package_plugin.py`，可将 `git ls-files` 中已跟踪的插件文件打包为 AstrBot 本地上传安装使用的 zip。
+- 打包产物默认输出到 `dist/astrbot_plugin_napcat_fc-<version>.zip`，zip 根目录直接包含 `metadata.yaml`，符合 AstrBot 本地插件上传安装的元数据读取方式。
+- 更新开发约束：每次更改后必须运行打包脚本生成对应版本 zip，README 和测试同步覆盖打包流程。
+
+## v1.15.28 - 2026-04-27
+
+- 修复 `napcat_send_like` 提示词写有默认值但函数签名仍要求 `times` 必填的问题。
+- `napcat_send_like` 现在未传 `times` 时默认使用 `1`，避免 LLM 省略参数时触发 AstrBot handler 参数不匹配警告。
+- 测试覆盖空参数调用点赞工具和工具元数据中 `times` 不再标记为必填。
+
+## v1.15.27 - 2026-04-27
+
+- `napcat_search_tools` 作为唯一 `@filter.llm_tool` 常驻注册工具保留，确保 LLM 始终有稳定工具发现入口。
+- 搜索工具执行逻辑同时支持常驻注册入口和请求级注入副本，并通过当前事件绑定本轮 `ProviderRequest`，保证搜索后仍能立刻注入发现到的具体工具。
+- 具体 162 个 NapCat API 工具继续只使用 `# napcat_tool:` 元数据标记，不进入 AstrBot 全局工具注册。
+
+## v1.15.26 - 2026-04-27
+
+- 移除 `tool_registration_mode` 配置项，不再提供旧式全量注册回退开关。
+- 具体 NapCat 工具固定为按需构造和请求级注入；插件初始化仅清理旧版本热更新可能遗留在全局工具管理器里的同名工具。
+- README、配置 schema、工具发现报告和测试同步删除注册模式切换说明。
+
+## v1.15.25 - 2026-04-27
+
+- 移除具体 NapCat 工具上的 `@filter.llm_tool` 装饰器，改用 `# napcat_tool:` 元数据标记，确保模块 import 阶段不会触发 160+ 个工具的 AstrBot 全局注册。
+- 工具注册数据生成逻辑改为优先读取元数据标记，并保留旧装饰器解析作为兼容回退。
+- `tool_registration_mode` 的旧模式改名为 `static`，表示初始化阶段手动全量注册；`decorator` 和 `legacy` 仅作为旧配置别名。
+
+## v1.15.24 - 2026-04-27
+
+- 新增 `tool_registration_mode` 配置项，默认 `lazy`，避免一次性将 160+ 个 NapCat 工具常驻注册到 AstrBot 全局工具管理器。
+- 具体 NapCat 工具不再使用 `@filter.llm_tool` 装饰器，改用 `# napcat_tool:` 元数据标记生成工具数据库记录，从源头避免 import 阶段触发 AstrBot 全局工具注册。
+- `lazy` 模式下，搜索工具发现具体工具后，按工具数据库记录和插件绑定方法动态构造当前请求级工具。
+- 保留 `static` 兼容模式，可在初始化阶段手动恢复旧式全量注册、隐藏和请求级复制流程；`decorator` 和 `legacy` 仅作为旧配置别名兼容。
+- README、配置 schema、工具发现报告、元数据版本和测试同步覆盖新旧注册模式切换。
+
 ## v1.15.23 - 2026-04-26
 
 - 工具发现数据库初始化时会检测旧版 `napcat_tool` 表结构；如果缺少当前模型字段，会输出 warning 并列出缺失字段，然后自动执行兼容迁移。

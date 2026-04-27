@@ -14,7 +14,7 @@ CALL_RE = re.compile(
 
 
 def build_tool_registry_data(plugin_cls: type) -> list[ToolRegistryData]:
-    """Build persisted discovery records from explicit llm_tool methods."""
+    """Build persisted discovery records from metadata-only tool markers."""
 
     tool_names_by_method = _read_tool_names_by_method(plugin_cls)
     platform_names = _read_platform_tool_names(plugin_cls)
@@ -71,10 +71,22 @@ def build_tool_registry_data(plugin_cls: type) -> list[ToolRegistryData]:
 def _read_tool_names_by_method(plugin_cls: type) -> dict[str, str]:
     source = inspect.getsource(plugin_cls)
     pattern = re.compile(
+        r"# napcat_tool:\s*([a-zA-Z0-9_]+)\s+async def ([a-zA-Z0-9_]+)\(",
+        re.MULTILINE,
+    )
+    tool_names_by_method = {
+        match.group(2): match.group(1) for match in pattern.finditer(source)
+    }
+    if tool_names_by_method:
+        return tool_names_by_method
+
+    legacy_pattern = re.compile(
         r"@filter\.llm_tool\(name='([^']+)'\)\s+async def ([a-zA-Z0-9_]+)\(",
         re.MULTILINE,
     )
-    return {match.group(2): match.group(1) for match in pattern.finditer(source)}
+    return {
+        match.group(2): match.group(1) for match in legacy_pattern.finditer(source)
+    }
 
 
 def _read_platform_tool_names(plugin_cls: type) -> dict[str, tuple[str, ...]]:

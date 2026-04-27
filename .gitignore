@@ -206,16 +206,15 @@ marimo/_static/
 marimo/_lsp/
 __marimo__/
 
-# My
+# 请不要动这个,这个就是我不想上传的
 docs/
 .codex/
 .omx/
-CHANGELOG.md
 .idea/
 日志/
 data/
 .pipeline-workspace/
-report/
 TODO.md
 待删除.md
 CONSTRAINTS.md
+report/

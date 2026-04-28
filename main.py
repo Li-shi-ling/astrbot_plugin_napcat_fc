@@ -59,13 +59,15 @@ from napcat_fc.tool_registry import build_tool_registry_data
     "astrbot_plugin_napcat_fc",
     "Soulter / AstrBot contributors",
     "将 NapCat / OneBot / go-cqhttp API 注册为 AstrBot 函数工具。",
-    "1.16.0",
+    "1.16.1",
 )
 class NapCatFunctionToolsPlugin(Star):
     SEARCH_TOOL_NAME = "napcat_search_tools"
     CALL_TOOL_NAME = "napcat_call_tool"
     SEARCH_RESULT_LIMIT = 3
     SEARCH_CANDIDATE_LIMIT = 10
+    SEARCH_RESULT_FORMAT = "pipe"
+    SEARCH_RESULT_FORMATS = ("pipe", "tsv", "json")
     DISCOVERED_TOOL_LIMIT = 20
     INFORMATION_ACTION_PREFIXES = (
         "get_",
@@ -328,6 +330,7 @@ class NapCatFunctionToolsPlugin(Star):
                     "type": "integer",
                     "description": (
                         "可选，本次最多返回的候选工具数量。默认 3，最小有效值为 1。"
+                        "返回格式由插件配置 search_result_format 控制，默认 pipe，可选 pipe、tsv、json。"
                     ),
                 }
             ],
@@ -337,6 +340,7 @@ class NapCatFunctionToolsPlugin(Star):
                 "并返回每个候选工具的用途、参数说明、必填参数和 napcat_call_tool 调用样例。"
                 "搜索不会把具体 API 工具加入当前工具列表，后续执行统一调用 napcat_call_tool。"
                 "可用 result_limit 控制本次返回候选数量，默认 3。"
+                "搜索结果格式由插件配置 search_result_format 控制：pipe/tsv 为轻量文本，json 为完整结构。"
                 "如果一次搜索没有覆盖足够多工具，可以多次用同一个关键词搜索或换近义词搜索。"
                 "可搜索的能力大类包括: 消息发送与撤回、群消息和私聊消息、"
                 "合并转发和历史消息、群成员和群管理、好友和请求处理、"
@@ -406,7 +410,7 @@ Args:
     result_limit(int): 可选，本次最多返回的候选工具数量；默认 3，最小有效值为 1。
 
 Returns:
-    str: 返回搜索结果、参数说明和 napcat_call_tool 调用样例的 JSON 字符串。"""
+    str: 返回搜索结果、参数说明和 napcat_call_tool 调用样例；格式由 search_result_format 配置控制。"""
         req = self._get_remembered_provider_request(event)
         if req is None:
             return json.dumps(
@@ -488,32 +492,173 @@ Returns:
             matched_count=len(matched_names),
             matched_tools=matched_names,
         )
-        self._debug_log("search_tool:done", matched_count=len(matched_names))
+        result_format = self._get_search_result_format()
+        self._debug_log(
+            "search_tool:done",
+            matched_count=len(matched_names),
+            result_format=result_format,
+        )
+        if result_format == "json":
+            return self._format_json_search_result(
+                keyword=keyword,
+                original_keyword=original_keyword,
+                search_terms=search_terms,
+                candidate_limit=candidate_limit,
+                result_limit_value=result_limit_value,
+                records=records,
+                req=req,
+            )
+        return self._format_lightweight_search_result(
+            result_format=result_format,
+            keyword=keyword,
+            original_keyword=original_keyword,
+            search_terms=search_terms,
+            candidate_limit=candidate_limit,
+            result_limit_value=result_limit_value,
+            records=records,
+            req=req,
+        )
+
+    def _format_json_search_result(
+        self,
+        *,
+        keyword: str,
+        original_keyword: str,
+        search_terms: list[str],
+        candidate_limit: int,
+        result_limit_value: int,
+        records: list,
+        req: ProviderRequest,
+    ) -> str:
         return json.dumps(
-            {
-                "keyword": keyword,
-                "original_keyword": original_keyword,
-                "search_terms": search_terms,
-                "candidate_limit": candidate_limit,
-                "result_limit": result_limit_value,
-                "execution_tool": self.CALL_TOOL_NAME,
-                "next_step": (
-                    "从 matched_tools 中选择最符合目标的工具，调用 napcat_call_tool，"
-                    "tool_name 使用该工具 name，arguments 按 parameters/required_parameters 填写。"
-                ),
-                "matched_tools": [
+            self._build_search_result_envelope(
+                keyword=keyword,
+                original_keyword=original_keyword,
+                search_terms=search_terms,
+                candidate_limit=candidate_limit,
+                result_limit_value=result_limit_value,
+                matched_tools=[
                     self._serialize_search_tool_record(record)
                     for record in records
                 ],
-                "injected_tools": [],
-                "injected_count": 0,
-                "discovered_tool_count": 0,
-                "request_scope_tool_count": len(
-                    self._get_request_scope_napcat_tool_names(req)
-                ),
-            },
+                req=req,
+            ),
             ensure_ascii=False,
         )
+
+    def _build_search_result_envelope(
+        self,
+        *,
+        keyword: str,
+        original_keyword: str,
+        search_terms: list[str],
+        candidate_limit: int,
+        result_limit_value: int,
+        matched_tools,
+        req: ProviderRequest,
+    ) -> dict:
+        return {
+            "keyword": keyword,
+            "original_keyword": original_keyword,
+            "search_terms": search_terms,
+            "candidate_limit": candidate_limit,
+            "result_limit": result_limit_value,
+            "execution_tool": self.CALL_TOOL_NAME,
+            "next_step": (
+                "从 matched_tools 中选择最符合目标的工具，调用 napcat_call_tool，"
+                "tool_name 使用该工具 name，arguments 按 parameters/required_parameters 填写。"
+            ),
+            "matched_tools": matched_tools,
+            "injected_tools": [],
+            "injected_count": 0,
+            "discovered_tool_count": 0,
+            "request_scope_tool_count": len(
+                self._get_request_scope_napcat_tool_names(req)
+            ),
+        }
+
+    def _format_lightweight_search_result(
+        self,
+        *,
+        result_format: str,
+        keyword: str,
+        original_keyword: str,
+        search_terms: list[str],
+        candidate_limit: int,
+        result_limit_value: int,
+        records: list,
+        req: ProviderRequest,
+    ) -> str:
+        delimiter = "\t" if result_format == "tsv" else "|"
+        rows = [
+            f"format={result_format}",
+            f"keyword={self._escape_lightweight_cell(keyword, delimiter)}",
+            f"original_keyword={self._escape_lightweight_cell(original_keyword, delimiter)}",
+            f"search_terms={self._escape_lightweight_cell(','.join(search_terms), delimiter)}",
+            f"candidate_limit={candidate_limit}",
+            f"result_limit={result_limit_value}",
+            f"execution_tool={self.CALL_TOOL_NAME}",
+            "next_step=choose one row, then call napcat_call_tool(tool_name, arguments)",
+            delimiter.join(
+                [
+                    "name",
+                    "capability",
+                    "required",
+                    "optional",
+                    "call_example",
+                ]
+            ),
+        ]
+        rows.extend(
+            delimiter.join(self._serialize_lightweight_search_record(record, delimiter))
+            for record in records
+        )
+        rows.extend(
+            [
+                "injected_count=0",
+                "discovered_tool_count=0",
+                f"request_scope_tool_count={len(self._get_request_scope_napcat_tool_names(req))}",
+            ]
+        )
+        return "\n".join(rows)
+
+    def _serialize_lightweight_search_record(self, record, delimiter: str) -> list[str]:
+        parameters = self._load_parameter_specs(getattr(record, "parameters_json", "[]"))
+        required_parameters = self._load_required_parameter_names(
+            getattr(record, "required_parameters_json", "[]")
+        )
+        parameter_names = [
+            parameter["name"]
+            for parameter in parameters
+            if isinstance(parameter, dict) and parameter.get("name")
+        ]
+        optional_parameters = [
+            name for name in parameter_names if name not in set(required_parameters)
+        ]
+        call_example = {
+            "tool_name": record.tool_name,
+            "arguments": self._build_call_argument_example(
+                parameters,
+                required_parameters,
+            ),
+        }
+        return [
+            self._escape_lightweight_cell(record.tool_name, delimiter),
+            self._escape_lightweight_cell(record.capability, delimiter),
+            self._escape_lightweight_cell(",".join(required_parameters) or "-", delimiter),
+            self._escape_lightweight_cell(",".join(optional_parameters) or "-", delimiter),
+            self._escape_lightweight_cell(
+                json.dumps(call_example, ensure_ascii=False, separators=(",", ":")),
+                delimiter,
+            ),
+        ]
+
+    def _escape_lightweight_cell(self, value, delimiter: str) -> str:
+        text = str(value if value is not None else "")
+        text = text.replace("\r", " ").replace("\n", " ").replace("\t", " ")
+        if delimiter != "\t":
+            text = text.replace(delimiter, "/")
+        return text.strip()
 
     def _serialize_search_tool_record(self, record) -> dict:
         parameters = self._load_parameter_specs(getattr(record, "parameters_json", "[]"))
@@ -780,6 +925,13 @@ Returns:
         except (TypeError, ValueError):
             return self.SEARCH_CANDIDATE_LIMIT
         return max(1, limit)
+
+    def _get_search_result_format(self) -> str:
+        value = str(self.config.get("search_result_format", self.SEARCH_RESULT_FORMAT))
+        normalized = value.strip().lower()
+        if normalized in self.SEARCH_RESULT_FORMATS:
+            return normalized
+        return self.SEARCH_RESULT_FORMAT
 
     def _get_search_result_limit(self, result_limit=None) -> int:
         if result_limit is None:

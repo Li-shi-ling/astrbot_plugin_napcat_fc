@@ -17,6 +17,12 @@
     "hint": "\u9ed8\u8ba4 10\u3002\u8c03\u5927\u53ef\u4ee5\u8ba9\u5df2\u53d1\u73b0\u5de5\u5177\u88ab\u8df3\u8fc7\u540e\u4ecd\u6709\u66f4\u591a\u65b0\u5de5\u5177\u8fdb\u5165\u5019\u9009\uff0c\u4f46\u4f1a\u589e\u52a0\u5c11\u91cf\u6570\u636e\u5e93\u641c\u7d22\u548c\u6392\u5e8f\u5f00\u9500\u3002\u6700\u5c0f\u6709\u6548\u503c\u4e3a 1\u3002",
     "default": 10
   },
+  "search_result_format": {
+    "description": "NapCat 搜索工具的结果格式。pipe 和 tsv 为轻量文本，json 为完整结构化 JSON。",
+    "type": "string",
+    "hint": "默认 pipe，用于降低搜索结果进入历史后的 token 消耗。可选值：pipe、tsv、json。需要兼容旧版完整结构时使用 json。",
+    "default": "pipe"
+  },
   "discovered_tool_limit": {
     "description": "NapCat \u5df2\u53d1\u73b0\u5de5\u5177\u6301\u4e45\u5316\u961f\u5217\u7684\u6700\u5927\u4fdd\u5b58\u6570\u91cf\u3002",
     "type": "int",

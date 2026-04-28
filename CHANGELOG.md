@@ -1,5 +1,11 @@
 ﻿# 更新日志
 
+## v1.16.1 - 2026-04-28
+
+- 新增 `search_result_format` 配置，支持 `pipe`、`tsv`、`json` 三种搜索结果格式；默认使用轻量 `pipe`，减少搜索结果进入历史后的 token 消耗。
+- `pipe`/`tsv` 模式只返回工具名、能力摘要、必填参数、可选参数名和紧凑 `napcat_call_tool` 调用样例；`json` 模式保留 v1.16.0 的完整结构化结果。
+- 新增回归测试覆盖默认 pipe、tsv 和 json 兼容模式。
+
 ## v1.16.0 - 2026-04-28
 
 - 重构 NapCat 工具暴露方式：LLM 请求阶段只稳定注入 `napcat_search_tools` 和 `napcat_call_tool` 两个工具，不再按发现队列动态注入具体 API 工具，降低工具列表变化对缓存命中率的影响。

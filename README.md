@@ -13,7 +13,7 @@
 - 复用 AstrBot 默认接入 NapCat 的 `AiocqhttpMessageEvent` 和当前事件的 `event.bot.api.call_action`，不自建 HTTP 客户端。
 - 初始化时创建工具管理数据库 `napcat_fc_tools.db`，记录工具名、API、能力、参数、平台限制、命名空间、搜索别名、风险等级和启用状态，供动态工具发现使用。
 - 具体 NapCat 工具不作为全局工具常驻注册或暴露，`on_llm_request(priority=-150)` 阶段只注入 `napcat_search_tools` 和 `napcat_call_tool` 两个请求级稳定工具；该优先级会晚于旧上传残留实例执行，确保当前版本同名入口覆盖旧 handler。聊天记录查询统一暴露为 `napcat_get_msg_history`，合并转发和单条转发统一暴露为 `napcat_send_forward_msg`，底层群/私聊/单条接口只作为内部兼容方法保留。
-- `napcat_search_tools` 搜索工具会一直注入到 aiocqhttp/NapCat 请求中。当当前可用工具列表里没有明确可以完成用户目标的 NapCat 工具时，应先调用它进行工具发现。它支持空格分词并发搜索，并会结合工具名、API、能力说明、命名空间、搜索别名和参数名综合排序；搜索结果会返回候选工具的用途、参数说明、必填参数和 `napcat_call_tool` 调用样例。搜索不会写入发现队列，也不会把具体 API 工具注入当前请求。可通过 `result_limit` 控制本次返回候选数量，默认 `3`；如果需要更广泛的工具集合，可以多次用同一个关键词或近义词搜索。
+- `napcat_search_tools` 搜索工具会一直注入到 aiocqhttp/NapCat 请求中。当当前可用工具列表里没有明确可以完成用户目标的 NapCat 工具时，应先调用它进行工具发现。它支持空格分词并发搜索，并会结合工具名、API、能力说明、命名空间、搜索别名和参数名综合排序；搜索结果会返回候选工具的用途、必填参数、可选参数名和 `napcat_call_tool` 调用样例。搜索不会写入发现队列，也不会把具体 API 工具注入当前请求。可通过 `result_limit` 控制本次返回候选数量，默认 `3`；如果需要更广泛的工具集合，可以多次用同一个关键词或近义词搜索。搜索结果格式由 `search_result_format` 控制，默认 `pipe`，可选 `pipe`、`tsv`、`json`。
 - `napcat_call_tool` 是唯一执行入口，通过 `tool_name` 和 `arguments` 调用搜索到的具体 NapCat 工具。它复用插件内已有 API 方法，因此会保留会话默认参数、回复消息优先、图片自动提取、Ark 自动发送、合并转发和错误 JSON 返回逻辑。
 - 在 aiocqhttp/NapCat 请求中，当前用户文本和 `napcat_search_tools` 搜索关键词里的 `qq`/`QQ` 会归一为 `napcat`，减少模型把 NapCat 平台能力误当作普通 QQ 文本操作的情况。
 - 仅系统专属工具名记录在插件类属性 `WINDOWS_TOOL_NAMES`、`LINUX_TOOL_NAMES`、`MAC_TOOL_NAMES` 中；当前只有 OCR 工具属于 Windows 专属。
@@ -61,6 +61,8 @@
 `dynamic_injection_enabled`、`discovered_tool_limit` 和 `unlimited_request_tool_injection` 为旧版动态注入配置，当前两工具稳定入口模式不再依赖这些配置。请求阶段仍会先卸载本轮请求里已有的具体 NapCat API 工具，再注入 `napcat_search_tools` 和 `napcat_call_tool`。
 
 如需调整搜索候选池大小，可在插件配置中设置 `search_candidate_limit`，默认 `10`，最小有效值为 `1`。
+
+如需调整搜索结果格式，可在插件配置中设置 `search_result_format`，默认 `pipe`。`pipe` 和 `tsv` 为轻量文本格式，只返回工具名、能力摘要、必填参数、可选参数名和紧凑调用样例，适合降低 token 消耗；`json` 为完整结构化格式，包含完整参数描述，适合调试或兼容旧工作流。
 
 如需控制上下文 ID 容错，可设置 `fallback_invalid_context_ids`，默认 `true`。开启后，`group_id`、`user_id`、`self_id`、Ark 自动发送目标 `send_group_id`、`send_user_id` 等可从当前事件补齐或回退的 ID 参数如果小于 6 位或不是纯数字，插件会回退为当前会话默认值，并在后台通过 AstrBot logger 输出警告；关闭后只对 `None`、`0` 和空字符串走默认补齐。
 

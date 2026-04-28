@@ -1751,6 +1751,20 @@ def test_search_result_limit_uses_argument_with_default_and_minimum():
     assert plugin._get_search_result_limit("invalid") == 3
 
 
+def test_search_result_format_uses_config_with_default_and_fallback():
+    plugin = NapCatFunctionToolsPlugin(context=FakeContext([]))
+    assert plugin._get_search_result_format() == "pipe"
+
+    plugin.config["search_result_format"] = "tsv"
+    assert plugin._get_search_result_format() == "tsv"
+
+    plugin.config["search_result_format"] = "JSON"
+    assert plugin._get_search_result_format() == "json"
+
+    plugin.config["search_result_format"] = "invalid"
+    assert plugin._get_search_result_format() == "pipe"
+
+
 @pytest.mark.asyncio
 async def test_on_llm_request_injects_only_stable_search_and_call_tools():
     source_tool = make_function_tool("napcat_send_msg", active=False)
@@ -2012,7 +2026,7 @@ async def test_search_tool_returns_call_instructions_without_injecting_tools():
     get_group_tool = make_function_tool("napcat_get_group_list", active=False)
     plugin = NapCatFunctionToolsPlugin(
         context=FakeContext([send_group_tool, get_group_tool]),
-        config={"discovered_tool_limit": 1},
+        config={"discovered_tool_limit": 1, "search_result_format": "json"},
     )
     db_path = (
         Path(__file__).resolve().parents[1]
@@ -2063,9 +2077,93 @@ async def test_search_tool_returns_call_instructions_without_injecting_tools():
 
 
 @pytest.mark.asyncio
+async def test_search_tool_defaults_to_lightweight_pipe_result():
+    plugin = NapCatFunctionToolsPlugin(context=FakeContext([]))
+    db_path = (
+        Path(__file__).resolve().parents[1]
+        / f".test-pipe-search-tools-{uuid.uuid4().hex}.db"
+    )
+    plugin.tool_db = ToolDBManager(str(db_path))
+    plugin.tool_registry_repo = ToolRegistryRepo(plugin.tool_db)
+    await plugin.tool_db.init_db()
+    try:
+        records = [
+            record
+            for record in build_tool_registry_data(NapCatFunctionToolsPlugin)
+            if record.tool_name == "napcat_send_msg"
+        ]
+        await plugin.tool_registry_repo.replace_all_tools(records)
+        req = ProviderRequest()
+        req.func_tool = ToolSet()
+
+        result = await plugin._run_search_tool(
+            make_aiocqhttp_event(),
+            req,
+            keyword="send msg",
+            result_limit=1,
+        )
+
+        assert result.startswith("format=pipe\n")
+        assert "execution_tool=napcat_call_tool" in result
+        assert "name|capability|required|optional|call_example" in result
+        assert "napcat_send_msg|" in result
+        assert '"tool_name":"napcat_send_msg"' in result
+        assert '"parameters"' not in result
+    finally:
+        await plugin.tool_db.close()
+        for suffix in ("", "-wal", "-shm"):
+            path = Path(str(db_path) + suffix)
+            if path.exists():
+                path.unlink()
+
+
+@pytest.mark.asyncio
+async def test_search_tool_can_return_lightweight_tsv_result():
+    plugin = NapCatFunctionToolsPlugin(
+        context=FakeContext([]),
+        config={"search_result_format": "tsv"},
+    )
+    db_path = (
+        Path(__file__).resolve().parents[1]
+        / f".test-tsv-search-tools-{uuid.uuid4().hex}.db"
+    )
+    plugin.tool_db = ToolDBManager(str(db_path))
+    plugin.tool_registry_repo = ToolRegistryRepo(plugin.tool_db)
+    await plugin.tool_db.init_db()
+    try:
+        records = [
+            record
+            for record in build_tool_registry_data(NapCatFunctionToolsPlugin)
+            if record.tool_name == "napcat_send_msg"
+        ]
+        await plugin.tool_registry_repo.replace_all_tools(records)
+        req = ProviderRequest()
+        req.func_tool = ToolSet()
+
+        result = await plugin._run_search_tool(
+            make_aiocqhttp_event(),
+            req,
+            keyword="send msg",
+            result_limit=1,
+        )
+
+        assert result.startswith("format=tsv\n")
+        assert "name\tcapability\trequired\toptional\tcall_example" in result
+        assert "napcat_send_msg\t" in result
+        assert '"tool_name":"napcat_send_msg"' in result
+    finally:
+        await plugin.tool_db.close()
+        for suffix in ("", "-wal", "-shm"):
+            path = Path(str(db_path) + suffix)
+            if path.exists():
+                path.unlink()
+
+
+@pytest.mark.asyncio
 async def test_registered_search_tool_uses_remembered_request_context():
     send_group_tool = make_function_tool("napcat_send_msg", active=False)
     plugin = NapCatFunctionToolsPlugin(context=FakeContext([send_group_tool]))
+    plugin.config["search_result_format"] = "json"
     db_path = (
         Path(__file__).resolve().parents[1]
         / f".test-registered-search-tools-{uuid.uuid4().hex}.db"
@@ -2180,6 +2278,7 @@ async def test_call_tool_returns_friendly_error_for_missing_required_arguments()
 async def test_search_tool_normalizes_qq_keyword_to_napcat():
     send_group_tool = make_function_tool("napcat_send_msg", active=False)
     plugin = NapCatFunctionToolsPlugin(context=FakeContext([send_group_tool]))
+    plugin.config["search_result_format"] = "json"
     db_path = (
         Path(__file__).resolve().parents[1]
         / f".test-qq-normalize-search-tools-{uuid.uuid4().hex}.db"
@@ -2237,7 +2336,7 @@ async def test_search_tool_splits_terms_and_keeps_results_callable_without_injec
     tools = [make_function_tool(tool_name, active=False) for tool_name in tool_names]
     plugin = NapCatFunctionToolsPlugin(
         context=FakeContext(tools),
-        config={"search_candidate_limit": 4},
+        config={"search_candidate_limit": 4, "search_result_format": "json"},
     )
     db_path = (
         Path(__file__).resolve().parents[1]
@@ -2300,6 +2399,7 @@ async def test_search_tool_never_mutates_request_scope_or_discovered_queue():
             "discovered_tool_limit": 1,
             "search_candidate_limit": 5,
             "unlimited_request_tool_injection": True,
+            "search_result_format": "json",
         },
     )
     db_path = (
@@ -2359,6 +2459,7 @@ async def test_search_tool_never_mutates_request_scope_or_discovered_queue():
 async def test_search_tool_filters_platform_specific_results_before_persisting():
     ocr_tool = make_function_tool("napcat_dot_ocr_image", active=False)
     plugin = NapCatFunctionToolsPlugin(context=FakeContext([ocr_tool]))
+    plugin.config["search_result_format"] = "json"
     plugin.current_platform_name = "linux"
     db_path = (
         Path(__file__).resolve().parents[1]

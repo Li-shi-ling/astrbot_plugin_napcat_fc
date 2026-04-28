@@ -56,13 +56,13 @@
 
 工具管理数据库位于 AstrBot 插件数据目录，表名为 `napcat_tool`。插件启动时会按当前 `main.py` 中的工具定义同步记录，保留已有 `enabled` 状态并移除已不存在的工具。外部工具发现逻辑可以读取 `enabled`、`namespace`、`aliases_json`、`risk_level`、`requires_confirmation`、`default_discoverable`、`parameters_json`、`required_parameters_json` 和 `platforms_json` 字段进行筛选。
 
-旧版搜索发现队列 `napcat_discovered_tool` 表保留用于数据库兼容和外部实验，但当前默认流程不再写入该队列，也不会根据队列注入具体工具。搜索工具每次会先取 `search_candidate_limit` 个候选，默认值为 10，再按综合相关度返回前 `result_limit` 个候选及调用说明。
-
-`dynamic_injection_enabled`、`discovered_tool_limit` 和 `unlimited_request_tool_injection` 为旧版动态注入配置，当前两工具稳定入口模式不再依赖这些配置。请求阶段仍会先卸载本轮请求里已有的具体 NapCat API 工具，再注入 `napcat_search_tools` 和 `napcat_call_tool`。
+搜索工具不会写入持久化发现队列，也不会根据历史搜索结果注入具体工具。旧版 `napcat_discovered_tool` 表会在插件启动迁移时清理。搜索工具每次会先取 `search_candidate_limit` 个候选，默认值为 10，再按综合相关度返回前 `result_limit` 个候选及调用说明。
 
 如需调整搜索候选池大小，可在插件配置中设置 `search_candidate_limit`，默认 `10`，最小有效值为 `1`。
 
 如需调整搜索结果格式，可在插件配置中设置 `search_result_format`，默认 `pipe`。`pipe` 和 `tsv` 为完整文本调用说明，会返回每个候选工具的工具名、接口名、用途、风险信息、完整参数描述、必填参数、调用样例和 `napcat_call_tool` 使用说明；`json` 为完整结构化格式，适合调试或兼容旧工作流。
+
+如需控制搜索结果去重窗口，可设置 `search_result_suppress_turns`，默认 `3`。搜索结果返回过的工具会在同一会话接下来的 N 次 LLM 请求中不再被搜索到，避免同一批工具反复占据结果；小于等于 `0` 表示直到聊天历史清空前都不再搜索到这些工具。插件会根据 `req.contexts` 历史数量回退判断聊天记录被清理，并自动重置该会话的搜索屏蔽队列。
 
 如需控制上下文 ID 容错，可设置 `fallback_invalid_context_ids`，默认 `true`。开启后，`group_id`、`user_id`、`self_id`、Ark 自动发送目标 `send_group_id`、`send_user_id` 等可从当前事件补齐或回退的 ID 参数如果小于 6 位或不是纯数字，插件会回退为当前会话默认值，并在后台通过 AstrBot logger 输出警告；关闭后只对 `None`、`0` 和空字符串走默认补齐。
 

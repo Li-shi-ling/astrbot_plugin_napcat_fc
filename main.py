@@ -59,7 +59,7 @@ from napcat_fc.tool_registry import build_tool_registry_data
     "astrbot_plugin_napcat_fc",
     "Soulter / AstrBot contributors",
     "将 NapCat / OneBot / go-cqhttp API 注册为 AstrBot 函数工具。",
-    "1.16.2",
+    "1.16.3",
 )
 class NapCatFunctionToolsPlugin(Star):
     SEARCH_TOOL_NAME = "napcat_search_tools"
@@ -68,7 +68,7 @@ class NapCatFunctionToolsPlugin(Star):
     SEARCH_CANDIDATE_LIMIT = 10
     SEARCH_RESULT_FORMAT = "pipe"
     SEARCH_RESULT_FORMATS = ("pipe", "tsv", "json")
-    DISCOVERED_TOOL_LIMIT = 20
+    SEARCH_RESULT_SUPPRESS_TURNS = 3
     INFORMATION_ACTION_PREFIXES = (
         "get_",
         "_get_",
@@ -114,6 +114,9 @@ class NapCatFunctionToolsPlugin(Star):
         self._debug_started_at = time.perf_counter()
         self._debug_last_at = self._debug_started_at
         self._provider_requests_by_event_id: dict[int, ProviderRequest] = {}
+        self._search_suppression_by_conversation: dict[str, dict[str, int | None]] = {}
+        self._search_turn_by_conversation: dict[str, int] = {}
+        self._history_count_by_conversation: dict[str, int] = {}
 
     def _build_action_parameter_names(self) -> dict[str, set[str]]:
         action_parameter_names: dict[str, set[str]] = {}
@@ -168,6 +171,8 @@ class NapCatFunctionToolsPlugin(Star):
             return
 
         self._normalize_current_user_request_keywords(event, req)
+        self._reset_search_suppression_if_history_cleared(event, req)
+        self._advance_search_suppression_turn(event)
         self._remember_provider_request(event, req)
         self._ensure_request_tool_set(req)
         req.func_tool.add_tool(self._build_search_tool(req))
@@ -265,33 +270,6 @@ class NapCatFunctionToolsPlugin(Star):
                     item["text"] = normalized
                     replacements += 1
         return replacements
-
-    def _inject_tool_names_into_request(
-        self, req: ProviderRequest, tool_names: list[str]
-    ) -> int:
-        self._debug_log("inject_tools:start", requested_count=len(tool_names))
-        self._ensure_request_tool_set(req)
-        injected_count = 0
-        known_names = set(self.napcat_tool_names)
-        for tool_name in dict.fromkeys(tool_names):
-            if tool_name not in known_names:
-                continue
-            if not self._is_tool_available_on_current_platform(tool_name):
-                self._debug_log(
-                    "inject_tools:skip_platform_mismatch",
-                    tool_name=tool_name,
-                    current_platform=self.current_platform_name,
-                )
-                continue
-            request_tool = self._build_tool_from_registry_record(tool_name)
-            if request_tool is None:
-                continue
-            request_tool.active = True
-            req.func_tool.add_tool(request_tool)
-            injected_count += 1
-            self._debug_log("inject_tools:tool_injected", tool_name=tool_name)
-        self._debug_log("inject_tools:done", injected_count=injected_count)
-        return injected_count
 
     def _get_request_scope_napcat_tool_names(
         self, req: ProviderRequest | None
@@ -467,10 +445,12 @@ Returns:
         search_terms = self._build_search_terms(keyword)
         candidate_limit = self._get_search_candidate_limit()
         result_limit_value = self._get_search_result_limit(result_limit)
+        suppressed_tool_names = self._get_suppressed_search_tool_names(event)
         candidate_records = await self._search_tool_candidates(
             keyword,
             search_terms,
             candidate_limit,
+            suppressed_tool_names,
         )
         platform_records = [
             record
@@ -480,11 +460,14 @@ Returns:
         request_scope_names = self._get_request_scope_napcat_tool_names(req)
         records = platform_records[:result_limit_value]
         matched_names = [record.tool_name for record in records]
+        self._remember_search_result_tool_names(event, matched_names)
         self._debug_log(
             "search_tool:matched",
             keyword=keyword,
             search_terms=search_terms,
             candidate_limit=candidate_limit,
+            suppressed_tool_count=len(suppressed_tool_names),
+            suppressed_tools=sorted(suppressed_tool_names),
             candidate_count=len(candidate_records),
             platform_candidate_count=len(platform_records),
             request_scope_tool_count=len(request_scope_names),
@@ -505,6 +488,7 @@ Returns:
                 search_terms=search_terms,
                 candidate_limit=candidate_limit,
                 result_limit_value=result_limit_value,
+                suppressed_tool_names=suppressed_tool_names,
                 records=records,
                 req=req,
             )
@@ -515,6 +499,7 @@ Returns:
             search_terms=search_terms,
             candidate_limit=candidate_limit,
             result_limit_value=result_limit_value,
+            suppressed_tool_names=suppressed_tool_names,
             records=records,
             req=req,
         )
@@ -527,6 +512,7 @@ Returns:
         search_terms: list[str],
         candidate_limit: int,
         result_limit_value: int,
+        suppressed_tool_names: set[str],
         records: list,
         req: ProviderRequest,
     ) -> str:
@@ -537,6 +523,7 @@ Returns:
                 search_terms=search_terms,
                 candidate_limit=candidate_limit,
                 result_limit_value=result_limit_value,
+                suppressed_tool_names=suppressed_tool_names,
                 matched_tools=[
                     self._serialize_search_tool_record(record)
                     for record in records
@@ -554,6 +541,7 @@ Returns:
         search_terms: list[str],
         candidate_limit: int,
         result_limit_value: int,
+        suppressed_tool_names: set[str],
         matched_tools,
         req: ProviderRequest,
     ) -> dict:
@@ -568,10 +556,12 @@ Returns:
                 "从 matched_tools 中选择最符合目标的工具，调用 napcat_call_tool，"
                 "tool_name 使用该工具 name，arguments 按 parameters/required_parameters 填写。"
             ),
+            "suppressed_tools": sorted(suppressed_tool_names),
+            "suppressed_tool_count": len(suppressed_tool_names),
+            "search_result_suppress_turns": self._get_search_result_suppress_turns(),
             "matched_tools": matched_tools,
             "injected_tools": [],
             "injected_count": 0,
-            "discovered_tool_count": 0,
             "request_scope_tool_count": len(
                 self._get_request_scope_napcat_tool_names(req)
             ),
@@ -586,6 +576,7 @@ Returns:
         search_terms: list[str],
         candidate_limit: int,
         result_limit_value: int,
+        suppressed_tool_names: set[str],
         records: list,
         req: ProviderRequest,
     ) -> str:
@@ -598,6 +589,8 @@ Returns:
             f"candidate_limit={candidate_limit}",
             f"result_limit={result_limit_value}",
             f"execution_tool={self.CALL_TOOL_NAME}",
+            f"suppressed_tool_count={len(suppressed_tool_names)}",
+            f"search_result_suppress_turns={self._get_search_result_suppress_turns()}",
             "next_step=从 tool 行选择目标工具，按 parameter 行填写 arguments，再调用 napcat_call_tool。",
         ]
         rows.extend(
@@ -608,7 +601,6 @@ Returns:
         rows.extend(
             [
                 "injected_count=0",
-                "discovered_tool_count=0",
                 f"request_scope_tool_count={len(self._get_request_scope_napcat_tool_names(req))}",
             ]
         )
@@ -958,16 +950,121 @@ Returns:
             return self.SEARCH_RESULT_LIMIT
         return max(1, limit)
 
-    def _get_discovered_tool_limit(self) -> int:
-        raw_limit = self.config.get("discovered_tool_limit", self.DISCOVERED_TOOL_LIMIT)
+    def _get_search_result_suppress_turns(self) -> int:
+        raw_limit = self.config.get(
+            "search_result_suppress_turns",
+            self.SEARCH_RESULT_SUPPRESS_TURNS,
+        )
         try:
-            limit = int(raw_limit)
+            return int(raw_limit)
         except (TypeError, ValueError):
-            return self.DISCOVERED_TOOL_LIMIT
-        return max(1, limit)
+            return self.SEARCH_RESULT_SUPPRESS_TURNS
 
-    def _is_unlimited_request_tool_injection_enabled(self) -> bool:
-        return self.config.get("unlimited_request_tool_injection", False) is True
+    def _get_conversation_key(self, event: AstrMessageEvent) -> str:
+        session_id = getattr(event, "session_id", None)
+        if session_id:
+            return f"session:{session_id}"
+        message_obj = getattr(event, "message_obj", None)
+        message_session_id = getattr(message_obj, "session_id", None)
+        if message_session_id:
+            return f"session:{message_session_id}"
+        group_id = self._get_current_group_id_or_none(event)
+        if group_id is not None:
+            return f"group:{group_id}"
+        user_id = self._get_current_user_id_or_none(event)
+        if user_id is not None:
+            return f"user:{user_id}"
+        return f"event:{id(event)}"
+
+    def _get_request_history_count(self, req: ProviderRequest | None) -> int:
+        contexts = getattr(req, "contexts", None)
+        if isinstance(contexts, list):
+            return len(contexts)
+        return 0
+
+    def _reset_search_suppression_if_history_cleared(
+        self,
+        event: AstrMessageEvent,
+        req: ProviderRequest,
+    ):
+        conversation_key = self._get_conversation_key(event)
+        current_count = self._get_request_history_count(req)
+        previous_count = self._history_count_by_conversation.get(conversation_key)
+        if previous_count is not None and current_count < previous_count:
+            self._search_suppression_by_conversation.pop(conversation_key, None)
+            self._search_turn_by_conversation[conversation_key] = 0
+            self._debug_log(
+                "search_suppression:reset_history_cleared",
+                conversation_key=conversation_key,
+                previous_history_count=previous_count,
+                current_history_count=current_count,
+            )
+        self._history_count_by_conversation[conversation_key] = current_count
+
+    def _advance_search_suppression_turn(self, event: AstrMessageEvent):
+        conversation_key = self._get_conversation_key(event)
+        current_turn = self._search_turn_by_conversation.get(conversation_key, 0) + 1
+        self._search_turn_by_conversation[conversation_key] = current_turn
+        self._prune_expired_search_suppression(conversation_key)
+        self._debug_log(
+            "search_suppression:turn_advanced",
+            conversation_key=conversation_key,
+            turn=current_turn,
+            suppressed_count=len(
+                self._search_suppression_by_conversation.get(conversation_key, {})
+            ),
+        )
+
+    def _get_suppressed_search_tool_names(self, event: AstrMessageEvent) -> set[str]:
+        conversation_key = self._get_conversation_key(event)
+        self._prune_expired_search_suppression(conversation_key)
+        return set(self._search_suppression_by_conversation.get(conversation_key, {}))
+
+    def _remember_search_result_tool_names(
+        self,
+        event: AstrMessageEvent,
+        tool_names: list[str],
+    ):
+        if not tool_names:
+            return
+        conversation_key = self._get_conversation_key(event)
+        current_turn = self._search_turn_by_conversation.get(conversation_key, 0)
+        suppress_turns = self._get_search_result_suppress_turns()
+        suppressed = self._search_suppression_by_conversation.setdefault(
+            conversation_key,
+            {},
+        )
+        expires_at = None if suppress_turns <= 0 else current_turn + suppress_turns
+        for tool_name in dict.fromkeys(tool_names):
+            suppressed[tool_name] = expires_at
+        self._debug_log(
+            "search_suppression:remembered",
+            conversation_key=conversation_key,
+            suppress_turns=suppress_turns,
+            tool_names=list(dict.fromkeys(tool_names)),
+            suppressed_count=len(suppressed),
+        )
+
+    def _prune_expired_search_suppression(self, conversation_key: str):
+        suppressed = self._search_suppression_by_conversation.get(conversation_key)
+        if not suppressed:
+            return
+        current_turn = self._search_turn_by_conversation.get(conversation_key, 0)
+        expired_names = [
+            tool_name
+            for tool_name, expires_at in suppressed.items()
+            if expires_at is not None and current_turn > expires_at
+        ]
+        for tool_name in expired_names:
+            suppressed.pop(tool_name, None)
+        if not suppressed:
+            self._search_suppression_by_conversation.pop(conversation_key, None)
+        if expired_names:
+            self._debug_log(
+                "search_suppression:expired",
+                conversation_key=conversation_key,
+                expired_tools=expired_names,
+            )
 
     def _build_tool_from_registry_record(self, tool_name: str):
         record = self.tool_registry_records_by_name.get(tool_name)
@@ -1064,14 +1161,17 @@ Returns:
         keyword: str,
         terms: list[str],
         candidate_limit: int,
+        suppressed_tool_names: set[str] | None = None,
     ):
         if not terms:
             return []
 
+        suppressed_tool_names = set(suppressed_tool_names or set())
+        search_limit = candidate_limit + len(suppressed_tool_names)
         search_tasks = [
             self.tool_registry_repo.search_tools(
                 term,
-                limit=candidate_limit,
+                limit=search_limit,
                 enabled_only=True,
             )
             for term in terms
@@ -1083,7 +1183,11 @@ Returns:
                 by_name[record.tool_name] = record
 
         return sorted(
-            by_name.values(),
+            [
+                record
+                for record in by_name.values()
+                if record.tool_name not in suppressed_tool_names
+            ],
             key=lambda record: (
                 -self._combined_search_score(record, keyword, terms),
                 record.tool_name,

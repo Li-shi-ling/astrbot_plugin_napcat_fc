@@ -6,7 +6,7 @@ from datetime import datetime
 from sqlalchemy import delete, func, or_, select
 
 from .database import ToolDBManager
-from .tables import NapcatDiscoveredToolRecord, NapcatToolRecord
+from .tables import NapcatToolRecord
 
 
 @dataclass(frozen=True)
@@ -171,45 +171,6 @@ class ToolRegistryRepo:
                 record.tool_name,
             ),
         )[: max(0, limit)]
-
-    async def list_discovered_tool_names(self) -> list[str]:
-        async with self.db.get_session() as session:
-            result = await session.execute(
-                select(NapcatDiscoveredToolRecord).order_by(
-                    NapcatDiscoveredToolRecord.position.asc()
-                )
-            )
-            return [record.tool_name for record in result.scalars().all()]
-
-    async def add_discovered_tool_names(
-        self,
-        tool_names: list[str],
-        *,
-        max_size: int = 20,
-    ) -> list[str]:
-        existing = await self.list_discovered_tool_names()
-        queue = list(existing)
-        for tool_name in tool_names:
-            if tool_name in queue:
-                queue.remove(tool_name)
-            queue.append(tool_name)
-        if max_size > 0 and len(queue) > max_size:
-            queue = queue[-max_size:]
-        await self.replace_discovered_tool_names(queue)
-        return queue
-
-    async def replace_discovered_tool_names(self, tool_names: list[str]) -> int:
-        async with self.db.get_session() as session:
-            await session.execute(delete(NapcatDiscoveredToolRecord))
-            for index, tool_name in enumerate(dict.fromkeys(tool_names)):
-                session.add(
-                    NapcatDiscoveredToolRecord(
-                        tool_name=tool_name,
-                        position=index,
-                        updated_at=datetime.now(),
-                    )
-                )
-            return len(tool_names)
 
     def _to_record(self, tool: ToolRegistryData) -> NapcatToolRecord:
         return NapcatToolRecord(

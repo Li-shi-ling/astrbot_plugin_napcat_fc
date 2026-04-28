@@ -1379,15 +1379,6 @@ async def test_tool_registry_repo_roundtrip():
         assert target is not None
         assert target.enabled is False
 
-        assert await repo.add_discovered_tool_names(
-            ["tool_a", "tool_b", "tool_a", "tool_c"],
-            max_size=3,
-        ) == ["tool_b", "tool_a", "tool_c"]
-        assert await repo.add_discovered_tool_names(["tool_d"], max_size=3) == [
-            "tool_a",
-            "tool_c",
-            "tool_d",
-        ]
     finally:
         await db.close()
         for suffix in ("", "-wal", "-shm"):
@@ -1540,6 +1531,17 @@ async def test_tool_db_init_migrates_old_tool_table_metadata_columns():
         assert json.loads(migrated.aliases_json)
         assert migrated.risk_level == "low"
         assert migrated.default_discoverable is True
+        conn = sqlite3.connect(db_path)
+        try:
+            table_names = {
+                row[0]
+                for row in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type = 'table'"
+                )
+            }
+        finally:
+            conn.close()
+        assert "napcat_discovered_tool" not in table_names
     finally:
         await db.close()
         for suffix in ("", "-wal", "-shm"):
@@ -1725,21 +1727,21 @@ def test_search_result_serialization_accepts_legacy_record_without_metadata():
     }
 
 
-def test_discovered_tool_limit_uses_config_with_default_and_minimum():
+def test_search_result_suppress_turns_uses_config_with_default_and_invalid_fallback():
     plugin = NapCatFunctionToolsPlugin(context=FakeContext([]))
-    assert plugin._get_discovered_tool_limit() == 20
+    assert plugin._get_search_result_suppress_turns() == 3
 
-    plugin.config["discovered_tool_limit"] = 7
-    assert plugin._get_discovered_tool_limit() == 7
+    plugin.config["search_result_suppress_turns"] = 7
+    assert plugin._get_search_result_suppress_turns() == 7
 
-    plugin.config["discovered_tool_limit"] = "3"
-    assert plugin._get_discovered_tool_limit() == 3
+    plugin.config["search_result_suppress_turns"] = "0"
+    assert plugin._get_search_result_suppress_turns() == 0
 
-    plugin.config["discovered_tool_limit"] = 0
-    assert plugin._get_discovered_tool_limit() == 1
+    plugin.config["search_result_suppress_turns"] = -1
+    assert plugin._get_search_result_suppress_turns() == -1
 
-    plugin.config["discovered_tool_limit"] = "invalid"
-    assert plugin._get_discovered_tool_limit() == 20
+    plugin.config["search_result_suppress_turns"] = "invalid"
+    assert plugin._get_search_result_suppress_turns() == 3
 
 
 def test_search_result_limit_uses_argument_with_default_and_minimum():
@@ -1806,7 +1808,7 @@ async def test_on_llm_request_injects_only_stable_search_and_call_tools():
 
 
 @pytest.mark.asyncio
-async def test_on_llm_request_ignores_discovered_queue_for_stable_two_tool_mode():
+async def test_on_llm_request_injects_stable_two_tool_mode_without_discovered_queue():
     plugin = NapCatFunctionToolsPlugin(
         context=FakeContext([]),
     )
@@ -1825,9 +1827,6 @@ async def test_on_llm_request_ignores_discovered_queue_for_stable_two_tool_mode(
             if record.tool_name == "napcat_send_msg"
         ]
         await plugin.tool_registry_repo.replace_all_tools(records)
-        await plugin.tool_registry_repo.replace_discovered_tool_names(
-            ["napcat_send_msg"]
-        )
 
         req = ProviderRequest()
         req.func_tool = ToolSet()
@@ -1989,7 +1988,6 @@ async def test_llm_request_normalizes_qq_keyword_to_napcat_for_current_user_text
     )
     plugin = NapCatFunctionToolsPlugin(
         context=FakeContext([]),
-        config={"dynamic_injection_enabled": False},
     )
     req = ProviderRequest(
         prompt="帮我找 qq 打卡工具",
@@ -2026,7 +2024,7 @@ async def test_search_tool_returns_call_instructions_without_injecting_tools():
     get_group_tool = make_function_tool("napcat_get_group_list", active=False)
     plugin = NapCatFunctionToolsPlugin(
         context=FakeContext([send_group_tool, get_group_tool]),
-        config={"discovered_tool_limit": 1, "search_result_format": "json"},
+        config={"search_result_format": "json"},
     )
     db_path = (
         Path(__file__).resolve().parents[1]
@@ -2067,7 +2065,6 @@ async def test_search_tool_returns_call_instructions_without_injecting_tools():
         assert "required_parameters" in first_match
         assert payload["injected_count"] == 0
         assert req.func_tool.get_tool("napcat_send_msg") is None
-        assert await plugin.tool_registry_repo.list_discovered_tool_names() == []
     finally:
         await plugin.tool_db.close()
         for suffix in ("", "-wal", "-shm"):
@@ -2383,7 +2380,6 @@ async def test_search_tool_splits_terms_and_keeps_results_callable_without_injec
             for tool in payload["matched_tools"]
         )
         assert all(req.func_tool.get_tool(tool_name) is None for tool_name in matched_names)
-        assert await plugin.tool_registry_repo.list_discovered_tool_names() == []
     finally:
         await plugin.tool_db.close()
         for suffix in ("", "-wal", "-shm"):
@@ -2393,7 +2389,7 @@ async def test_search_tool_splits_terms_and_keeps_results_callable_without_injec
 
 
 @pytest.mark.asyncio
-async def test_search_tool_never_mutates_request_scope_or_discovered_queue():
+async def test_search_tool_suppresses_returned_tools_for_configured_turns():
     tool_names = {
         "napcat_get_group_info",
         "napcat_get_group_info_ex",
@@ -2405,9 +2401,8 @@ async def test_search_tool_never_mutates_request_scope_or_discovered_queue():
     plugin = NapCatFunctionToolsPlugin(
         context=FakeContext(tools),
         config={
-            "discovered_tool_limit": 1,
             "search_candidate_limit": 5,
-            "unlimited_request_tool_injection": True,
+            "search_result_suppress_turns": 1,
             "search_result_format": "json",
         },
     )
@@ -2425,21 +2420,30 @@ async def test_search_tool_never_mutates_request_scope_or_discovered_queue():
             if record.tool_name in tool_names
         ]
         await plugin.tool_registry_repo.replace_all_tools(records)
-        req = ProviderRequest()
+        event = make_aiocqhttp_event(group_id="654321")
+        req = ProviderRequest(contexts=[{"role": "user", "content": "one"}])
         req.func_tool = ToolSet()
-        await plugin.inject_napcat_tools_on_llm_request(make_aiocqhttp_event(), req)
+        await plugin.inject_napcat_tools_on_llm_request(event, req)
 
         search_tool = req.func_tool.get_tool(plugin.SEARCH_TOOL_NAME)
         first = json.loads(
             await search_tool.handler(
-                make_aiocqhttp_event(),
+                event,
                 keyword="group",
                 result_limit=2,
             )
         )
+        next_req = ProviderRequest(
+            contexts=[
+                {"role": "user", "content": "one"},
+                {"role": "assistant", "content": "two"},
+            ],
+        )
+        next_req.func_tool = ToolSet()
+        await plugin.inject_napcat_tools_on_llm_request(event, next_req)
         second = json.loads(
             await search_tool.handler(
-                make_aiocqhttp_event(),
+                event,
                 keyword="group",
                 result_limit=2,
             )
@@ -2447,15 +2451,16 @@ async def test_search_tool_never_mutates_request_scope_or_discovered_queue():
         request_scope_names = {
             name for name in tool_names if req.func_tool.get_tool(name) is not None
         }
-        persisted_names = await plugin.tool_registry_repo.list_discovered_tool_names()
+        first_names = {tool["name"] for tool in first["matched_tools"]}
+        second_names = {tool["name"] for tool in second["matched_tools"]}
 
         assert first["injected_count"] == 0
         assert second["injected_count"] == 0
         assert first["execution_tool"] == plugin.CALL_TOOL_NAME
         assert second["execution_tool"] == plugin.CALL_TOOL_NAME
+        assert second["suppressed_tool_count"] >= len(first_names)
+        assert first_names.isdisjoint(second_names)
         assert request_scope_names == set()
-        assert persisted_names == []
-        assert second["request_scope_tool_count"] == len(request_scope_names)
     finally:
         await plugin.tool_db.close()
         for suffix in ("", "-wal", "-shm"):
@@ -2465,7 +2470,73 @@ async def test_search_tool_never_mutates_request_scope_or_discovered_queue():
 
 
 @pytest.mark.asyncio
-async def test_search_tool_filters_platform_specific_results_before_persisting():
+async def test_search_suppression_resets_when_request_history_is_cleared():
+    tool_names = {
+        "napcat_get_group_info",
+        "napcat_get_group_info_ex",
+        "napcat_get_group_list",
+        "napcat_get_group_member_info",
+    }
+    plugin = NapCatFunctionToolsPlugin(
+        context=FakeContext([make_function_tool(name, active=False) for name in tool_names]),
+        config={
+            "search_candidate_limit": 5,
+            "search_result_suppress_turns": 0,
+            "search_result_format": "json",
+        },
+    )
+    db_path = (
+        Path(__file__).resolve().parents[1]
+        / f".test-search-history-reset-{uuid.uuid4().hex}.db"
+    )
+    plugin.tool_db = ToolDBManager(str(db_path))
+    plugin.tool_registry_repo = ToolRegistryRepo(plugin.tool_db)
+    await plugin.tool_db.init_db()
+    try:
+        records = [
+            record
+            for record in build_tool_registry_data(NapCatFunctionToolsPlugin)
+            if record.tool_name in tool_names
+        ]
+        await plugin.tool_registry_repo.replace_all_tools(records)
+        event = make_aiocqhttp_event(group_id="654321")
+        req = ProviderRequest(
+            contexts=[
+                {"role": "user", "content": "one"},
+                {"role": "assistant", "content": "two"},
+                {"role": "user", "content": "three"},
+            ],
+        )
+        req.func_tool = ToolSet()
+        await plugin.inject_napcat_tools_on_llm_request(event, req)
+        search_tool = req.func_tool.get_tool(plugin.SEARCH_TOOL_NAME)
+
+        first = json.loads(
+            await search_tool.handler(event, keyword="group", result_limit=1)
+        )
+        blocked = json.loads(
+            await search_tool.handler(event, keyword="group", result_limit=1)
+        )
+        reset_req = ProviderRequest(contexts=[{"role": "user", "content": "fresh"}])
+        reset_req.func_tool = ToolSet()
+        await plugin.inject_napcat_tools_on_llm_request(event, reset_req)
+        reset = json.loads(
+            await search_tool.handler(event, keyword="group", result_limit=1)
+        )
+
+        first_name = first["matched_tools"][0]["name"]
+        assert first_name not in {tool["name"] for tool in blocked["matched_tools"]}
+        assert reset["matched_tools"][0]["name"] == first_name
+    finally:
+        await plugin.tool_db.close()
+        for suffix in ("", "-wal", "-shm"):
+            path = Path(str(db_path) + suffix)
+            if path.exists():
+                path.unlink()
+
+
+@pytest.mark.asyncio
+async def test_search_tool_filters_platform_specific_results_before_suppressing():
     ocr_tool = make_function_tool("napcat_dot_ocr_image", active=False)
     plugin = NapCatFunctionToolsPlugin(context=FakeContext([ocr_tool]))
     plugin.config["search_result_format"] = "json"
@@ -2494,7 +2565,6 @@ async def test_search_tool_filters_platform_specific_results_before_persisting()
         payload = json.loads(result)
 
         assert payload["matched_tools"] == []
-        assert await plugin.tool_registry_repo.list_discovered_tool_names() == []
         assert req.func_tool.get_tool("napcat_dot_ocr_image") is None
     finally:
         await plugin.tool_db.close()

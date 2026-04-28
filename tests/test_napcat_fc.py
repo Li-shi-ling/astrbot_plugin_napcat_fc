@@ -1848,6 +1848,69 @@ def test_search_tool_schema_marks_keyword_required_only():
     assert "result_limit" not in tool.parameters["required"]
 
 
+def test_napcat_llm_request_hook_runs_after_legacy_uploaded_instances():
+    source = (Path(__file__).resolve().parents[1] / "main.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert "@filter.on_llm_request(priority=-150)" in source
+
+
+def test_album_media_list_schema_keeps_attach_info_optional():
+    plugin = NapCatFunctionToolsPlugin(context=FakeContext([]))
+    tool = plugin._build_tool_from_registry_record("napcat_get_group_album_media_list")
+
+    assert tool is not None
+    assert tool.parameters["required"] == ["album_id"]
+    assert "attach_info" in tool.parameters["properties"]
+    assert "attach_info" not in tool.parameters["required"]
+
+
+@pytest.mark.asyncio
+async def test_album_media_list_defaults_attach_info_to_empty_string():
+    event = make_aiocqhttp_event(group_id="654321", user_id="123456")
+    plugin = NapCatFunctionToolsPlugin(context=None)
+
+    result = await plugin.napcat_get_group_album_media_list_tool(
+        event,
+        album_id="album_1",
+    )
+
+    assert '"status": "ok"' in result
+    assert event.bot.api.calls == [
+        (
+            "get_group_album_media_list",
+            {"album_id": "album_1", "attach_info": "", "group_id": 654321},
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_album_media_like_payload_uses_documented_argument_order():
+    event = make_aiocqhttp_event(group_id="654321", user_id="123456")
+    plugin = NapCatFunctionToolsPlugin(context=None)
+
+    result = await plugin.napcat_set_group_album_media_like_tool(
+        event,
+        album_id="album_1",
+        lloc="media_lloc",
+        id="like_key",
+        set=True,
+    )
+
+    assert '"status": "ok"' in result
+    action, payload = event.bot.api.calls[0]
+    assert action == "set_group_album_media_like"
+    assert list(payload.keys()) == ["group_id", "album_id", "lloc", "id", "set"]
+    assert payload == {
+        "group_id": 654321,
+        "album_id": "album_1",
+        "lloc": "media_lloc",
+        "id": "like_key",
+        "set": True,
+    }
+
+
 def test_no_optional_doc_parameter_is_required_by_signature():
     issues = []
     for record in build_tool_registry_data(NapCatFunctionToolsPlugin):

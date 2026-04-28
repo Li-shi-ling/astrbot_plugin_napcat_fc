@@ -58,7 +58,7 @@ from napcat_fc.tool_registry import build_tool_registry_data
     "astrbot_plugin_napcat_fc",
     "Soulter / AstrBot contributors",
     "将 NapCat / OneBot / go-cqhttp API 注册为 AstrBot 函数工具。",
-    "1.15.38",
+    "1.15.39",
 )
 class NapCatFunctionToolsPlugin(Star):
     SEARCH_TOOL_NAME = "napcat_search_tools"
@@ -148,7 +148,7 @@ class NapCatFunctionToolsPlugin(Star):
         self._debug_log("terminate:db_closed")
         return None
 
-    @filter.on_llm_request(priority=-100)
+    @filter.on_llm_request(priority=-150)
     async def inject_napcat_tools_on_llm_request(
         self, event: AstrMessageEvent, req: ProviderRequest
     ):
@@ -2769,14 +2769,14 @@ Returns:
         self,
         event: AstrMessageEvent,
         album_id: str,
-        attach_info: str,
+        attach_info: str = "",
         group_id: int = None,
     ):
         """获取群相册媒体列表，适合查询群相册图片、视频、相册资源和上传前选择相册
 
 Args:
     album_id(str): 必填，相册ID。
-    attach_info(str): 必填，附加信息（用于分页）。
+    attach_info(str): 可选，附加信息（用于分页），首次查询默认传空字符串；下一页使用上次返回的 next_attach_info。
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
 
 Returns:
@@ -2784,8 +2784,7 @@ Returns:
         payload: dict = {}
         if album_id is not None:
             payload['album_id'] = album_id
-        if attach_info is not None:
-            payload['attach_info'] = attach_info
+        payload['attach_info'] = attach_info or ""
         payload['group_id'] = group_id
         return await self._call_napcat_api(event, 'get_group_album_media_list', payload)
 
@@ -4877,8 +4876,8 @@ Returns:
         self,
         event: AstrMessageEvent,
         album_id: str,
-        id: str,
         lloc: str,
+        id: str,
         set: bool,
         group_id: int = None,
     ):
@@ -4887,20 +4886,20 @@ Returns:
 Args:
     album_id(str): 必填，相册ID。
     group_id(int): 可选，群号。默认使用当前群聊的群号；如果当前是私聊且未提供群号，会返回可读提示。
-    id(str): 必填，点赞ID。
     lloc(str): 必填，媒体ID (lloc)。
+    id(str): 必填，点赞ID，通常使用 napcat_get_group_album_media_list 返回的 like.key。
     set(bool): 必填，是否点赞。
 
 Returns:
     str: 返回 API 响应的 JSON 字符串。"""
         payload: dict = {}
+        payload['group_id'] = group_id
         if album_id is not None:
             payload['album_id'] = album_id
-        payload['group_id'] = group_id
-        if id is not None:
-            payload['id'] = id
         if lloc is not None:
             payload['lloc'] = lloc
+        if id is not None:
+            payload['id'] = id
         if set is not None:
             payload['set'] = set
         return await self._call_napcat_api(event, 'set_group_album_media_like', payload)

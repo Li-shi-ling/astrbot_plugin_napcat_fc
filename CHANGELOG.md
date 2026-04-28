@@ -1,5 +1,12 @@
 ﻿# 更新日志
 
+## v1.15.39 - 2026-04-28
+
+- 修复 `napcat_get_group_album_media_list` 的 `attach_info` 参数：首次查询默认传空字符串，不再要求 LLM 必须显式填写分页参数。
+- 调整 `napcat_set_group_album_media_like` 的参数顺序与 payload 构造顺序，按 NapCat 文档的 `group_id、album_id、lloc、id、set` 顺序发送。
+- 将 NapCat 请求阶段注入 hook 调整为 `priority=-150`，让当前版本在旧上传残留实例之后覆盖同名请求级工具，避免旧 handler 抢占执行。
+- 新增回归测试覆盖相册媒体分页默认值、相册点赞 payload 顺序和 hook 优先级。
+
 ## v1.15.38 - 2026-04-27
 
 - 新增当前用户请求关键词归一规则：在 aiocqhttp/NapCat 请求中，用户文本和工具搜索关键词里的 `qq`/`QQ` 会替换为 `napcat`，降低模型把 NapCat 能力误判为普通 QQ 文本操作的概率。

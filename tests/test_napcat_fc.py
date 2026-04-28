@@ -2077,7 +2077,7 @@ async def test_search_tool_returns_call_instructions_without_injecting_tools():
 
 
 @pytest.mark.asyncio
-async def test_search_tool_defaults_to_lightweight_pipe_result():
+async def test_search_tool_defaults_to_complete_pipe_result():
     plugin = NapCatFunctionToolsPlugin(context=FakeContext([]))
     db_path = (
         Path(__file__).resolve().parents[1]
@@ -2105,10 +2105,15 @@ async def test_search_tool_defaults_to_lightweight_pipe_result():
 
         assert result.startswith("format=pipe\n")
         assert "execution_tool=napcat_call_tool" in result
-        assert "name|capability|required|optional|call_example" in result
-        assert "napcat_send_msg|" in result
+        assert "tool|napcat_send_msg" in result
+        assert "endpoint|send_msg" in result
+        assert "required_parameters|message,message_type" in result
+        assert "parameter|message|string|required|" in result
+        assert "parameter|message_type|string|required|" in result
+        assert "parameter|group_id|integer|optional|" in result
+        assert "call_tool|napcat_call_tool" in result
         assert '"tool_name":"napcat_send_msg"' in result
-        assert '"parameters"' not in result
+        assert "usage|调用 napcat_call_tool" in result
     finally:
         await plugin.tool_db.close()
         for suffix in ("", "-wal", "-shm"):
@@ -2118,7 +2123,7 @@ async def test_search_tool_defaults_to_lightweight_pipe_result():
 
 
 @pytest.mark.asyncio
-async def test_search_tool_can_return_lightweight_tsv_result():
+async def test_search_tool_can_return_complete_tsv_result():
     plugin = NapCatFunctionToolsPlugin(
         context=FakeContext([]),
         config={"search_result_format": "tsv"},
@@ -2148,8 +2153,12 @@ async def test_search_tool_can_return_lightweight_tsv_result():
         )
 
         assert result.startswith("format=tsv\n")
-        assert "name\tcapability\trequired\toptional\tcall_example" in result
-        assert "napcat_send_msg\t" in result
+        assert "tool\tnapcat_send_msg" in result
+        assert "endpoint\tsend_msg" in result
+        assert "required_parameters\tmessage,message_type" in result
+        assert "parameter\tmessage\tstring\trequired\t" in result
+        assert "parameter\tmessage_type\tstring\trequired\t" in result
+        assert "call_tool\tnapcat_call_tool" in result
         assert '"tool_name":"napcat_send_msg"' in result
     finally:
         await plugin.tool_db.close()

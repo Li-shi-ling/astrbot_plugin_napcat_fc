@@ -1,5 +1,12 @@
 ﻿# 更新日志
 
+## v1.16.0 - 2026-04-28
+
+- 重构 NapCat 工具暴露方式：LLM 请求阶段只稳定注入 `napcat_search_tools` 和 `napcat_call_tool` 两个工具，不再按发现队列动态注入具体 API 工具，降低工具列表变化对缓存命中率的影响。
+- `napcat_search_tools` 改为只返回候选工具、参数说明、必填参数和 `napcat_call_tool` 调用样例，不再写入持久化发现队列或修改当前请求工具列表。
+- 新增 `napcat_call_tool` 通用调用入口，通过 `tool_name` + `arguments` 调用插件内已有 API 方法，继续复用会话默认参数、回复消息优先、图片自动提取、Ark 自动发送、合并转发和错误 JSON 返回逻辑。
+- 新增回归测试覆盖两工具请求注入、搜索结果调用说明、通用调用成功路径、JSON 字符串参数、未知工具和缺失必填参数错误。
+
 ## v1.15.39 - 2026-04-28
 
 - 修复 `napcat_get_group_album_media_list` 的 `attach_info` 参数：首次查询默认传空字符串，不再要求 LLM 必须显式填写分页参数。

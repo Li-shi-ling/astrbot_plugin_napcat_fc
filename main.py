@@ -2,6 +2,7 @@
 
 import asyncio
 import importlib
+import inspect
 import json
 import os
 import platform
@@ -58,10 +59,11 @@ from napcat_fc.tool_registry import build_tool_registry_data
     "astrbot_plugin_napcat_fc",
     "Soulter / AstrBot contributors",
     "将 NapCat / OneBot / go-cqhttp API 注册为 AstrBot 函数工具。",
-    "1.15.39",
+    "1.16.0",
 )
 class NapCatFunctionToolsPlugin(Star):
     SEARCH_TOOL_NAME = "napcat_search_tools"
+    CALL_TOOL_NAME = "napcat_call_tool"
     SEARCH_RESULT_LIMIT = 3
     SEARCH_CANDIDATE_LIMIT = 10
     DISCOVERED_TOOL_LIMIT = 20
@@ -138,7 +140,7 @@ class NapCatFunctionToolsPlugin(Star):
         logger.info(
             f"NapCat 函数工具已初始化：{self.tool_count} 个，"
             f"工具管理数据库已同步：{len(self.tool_registry_records)} 个，"
-            "具体工具按需注入。"
+            "通过搜索工具和通用调用工具提供稳定入口。"
         )
         self._debug_log("initialize:done")
 
@@ -152,7 +154,7 @@ class NapCatFunctionToolsPlugin(Star):
     async def inject_napcat_tools_on_llm_request(
         self, event: AstrMessageEvent, req: ProviderRequest
     ):
-        """在 LLM 请求阶段按工具管理数据库动态注入 NapCat 工具。"""
+        """在 LLM 请求阶段只注入 NapCat 搜索和通用调用两个稳定工具。"""
         self._debug_log(
             "llm_request:start",
             event_type=type(event).__name__,
@@ -167,20 +169,9 @@ class NapCatFunctionToolsPlugin(Star):
         self._remember_provider_request(event, req)
         self._ensure_request_tool_set(req)
         req.func_tool.add_tool(self._build_search_tool(req))
-        self._debug_log("llm_request:search_tool_injected")
-        if self.config.get("dynamic_injection_enabled", True) is False:
-            self._debug_log("llm_request:dynamic_injection_disabled")
-            return
-
-        discovered_tool_names = await self.tool_registry_repo.list_discovered_tool_names()
-        self._debug_log(
-            "llm_request:discovered_queue_loaded",
-            discovered_count=len(discovered_tool_names),
-        )
-        injected_count = self._inject_tool_names_into_request(req, discovered_tool_names)
-        if injected_count:
-            logger.debug(f"本轮 LLM 请求注入已发现 NapCat 工具：{injected_count} 个。")
-        self._debug_log("llm_request:done", injected_count=injected_count)
+        req.func_tool.add_tool(self._build_call_tool(req))
+        self._debug_log("llm_request:stable_tools_injected")
+        self._debug_log("llm_request:done", injected_count=2)
 
     def _ensure_request_tool_set(self, req: ProviderRequest):
         if req.func_tool is None:
@@ -318,7 +309,7 @@ class NapCatFunctionToolsPlugin(Star):
             keyword: str,
             result_limit: int = None,
         ) -> str:
-            """按关键词搜索 NapCat 工具，并立即注入本轮请求。"""
+            """按关键词搜索 NapCat 工具，并返回通用调用工具的调用说明。"""
             return await self._run_search_tool(event, req, keyword, result_limit)
 
         tool = self.context.get_llm_tool_manager().spec_to_func(
@@ -336,30 +327,69 @@ class NapCatFunctionToolsPlugin(Star):
                     "name": "result_limit",
                     "type": "integer",
                     "description": (
-                        "可选，本次最多加入持久化发现队列并注入当前请求的工具数量。"
-                        "默认 3，最小有效值为 1。"
+                        "可选，本次最多返回的候选工具数量。默认 3，最小有效值为 1。"
                     ),
                 }
             ],
             desc=(
                 "在 NapCat/OneBot/go-cqhttp 工具库中按关键词模糊搜索工具，"
                 "支持空格分词并发查询，会先取综合相关度最高的一批候选，"
-                "再排除已经发现过的工具，将剩余最相关的一批工具加入持久化发现队列，"
-                "并立即注入本轮请求。"
-                "可用 result_limit 控制本次加入工具列表的数量，默认 3。"
-                "如果一次搜索没有覆盖足够多工具，可以多次用同一个关键词搜索；"
-                "已发现工具会被跳过，后续搜索会继续补充更广泛的候选工具。"
+                "并返回每个候选工具的用途、参数说明、必填参数和 napcat_call_tool 调用样例。"
+                "搜索不会把具体 API 工具加入当前工具列表，后续执行统一调用 napcat_call_tool。"
+                "可用 result_limit 控制本次返回候选数量，默认 3。"
+                "如果一次搜索没有覆盖足够多工具，可以多次用同一个关键词搜索或换近义词搜索。"
                 "可搜索的能力大类包括: 消息发送与撤回、群消息和私聊消息、"
                 "合并转发和历史消息、群成员和群管理、好友和请求处理、"
                 "群文件和文件下载、图片/语音/OCR、表情和收藏、账号状态、"
                 "频道/频道身份组、资料查询、缓存清理和 NapCat 扩展接口。"
                 "当当前可用工具列表中没有明确可以完成用户目标的 NapCat 工具时，"
                 "必须先调用本工具进行工具发现；也可以在不知道具体 NapCat 工具名时调用。"
-                "搜索后再使用返回并已注入的具体工具。"
+                "搜索后按返回的 call_example 调用 napcat_call_tool。"
             ),
             handler=search_handler,
         )
         self._apply_required_parameters(tool, ["keyword"])
+        return tool
+
+    def _build_call_tool(self, req: ProviderRequest):
+        async def call_handler(
+            event: AstrMessageEvent,
+            tool_name: str,
+            arguments: dict | str = None,
+        ) -> str:
+            """通过通用入口调用搜索到的 NapCat 工具。"""
+            return await self._run_call_tool(event, tool_name, arguments)
+
+        tool = self.context.get_llm_tool_manager().spec_to_func(
+            name=self.CALL_TOOL_NAME,
+            func_args=[
+                {
+                    "name": "tool_name",
+                    "type": "string",
+                    "description": (
+                        "必填，要调用的 NapCat 工具名，来自 napcat_search_tools 返回结果的 name 字段。"
+                    ),
+                },
+                {
+                    "name": "arguments",
+                    "type": "object",
+                    "description": (
+                        "可选，传给目标工具的参数对象；也兼容 JSON 字符串。"
+                        "参数名和含义按 napcat_search_tools 返回的 parameters/required_parameters 填写。"
+                        "group_id、user_id、message_id 等上下文字段省略或为 None 时会优先使用当前会话默认值。"
+                    ),
+                },
+            ],
+            desc=(
+                "调用 napcat_search_tools 搜索到的 NapCat/OneBot/go-cqhttp API 工具。"
+                "先搜索，再把返回的 name 填入 tool_name，把 call_example.arguments 中需要的字段填入 arguments。"
+                "本工具复用插件内对应 API 的完整实现，包括当前会话默认 group_id/user_id/message_id、"
+                "回复消息优先、图片自动提取、Ark 自动发送、合并转发和错误 JSON 返回。"
+                "只能在 aiocqhttp/NapCat 消息事件中使用。"
+            ),
+            handler=call_handler,
+        )
+        self._apply_required_parameters(tool, ["tool_name"])
         return tool
 
     @filter.llm_tool(name='napcat_search_tools')
@@ -369,14 +399,14 @@ class NapCatFunctionToolsPlugin(Star):
         keyword: str,
         result_limit: int = None,
     ) -> str:
-        """在 NapCat/OneBot/go-cqhttp 工具库中按关键词搜索工具，并注入当前 LLM 请求
+        """在 NapCat/OneBot/go-cqhttp 工具库中按关键词搜索工具，并返回通用调用说明
 
 Args:
     keyword(str): 必填，搜索 NapCat 工具能力、工具名、API 名或参数名的关键词；多个词用空格隔开时会并发分词搜索，并按综合相关度排序。
-    result_limit(int): 可选，本次最多加入持久化发现队列并注入当前请求的工具数量；默认 3，最小有效值为 1。
+    result_limit(int): 可选，本次最多返回的候选工具数量；默认 3，最小有效值为 1。
 
 Returns:
-    str: 返回搜索结果、已注入工具、发现队列数量和跳过项的 JSON 字符串。"""
+    str: 返回搜索结果、参数说明和 napcat_call_tool 调用样例的 JSON 字符串。"""
         req = self._get_remembered_provider_request(event)
         if req is None:
             return json.dumps(
@@ -390,6 +420,23 @@ Returns:
                 ensure_ascii=False,
             )
         return await self._run_search_tool(event, req, keyword, result_limit)
+
+    @filter.llm_tool(name='napcat_call_tool')
+    async def napcat_call_tool(
+        self,
+        event: AstrMessageEvent,
+        tool_name: str,
+        arguments: dict = None,
+    ) -> str:
+        """调用 napcat_search_tools 搜索到的 NapCat 工具
+
+Args:
+    tool_name(str): 必填，目标 NapCat 工具名，使用 napcat_search_tools 返回的 name。
+    arguments(dict): 可选，目标工具参数对象；内部兼容 JSON 字符串。group_id、user_id、message_id 等可省略并使用当前会话默认值。
+
+Returns:
+    str: 返回目标 NapCat 工具的 JSON 字符串结果。"""
+        return await self._run_call_tool(event, tool_name, arguments)
 
     async def _run_search_tool(
         self,
@@ -426,26 +473,8 @@ Returns:
             for record in candidate_records
             if self._is_tool_available_on_current_platform(record.tool_name)
         ]
-        discovered_names = set(
-            await self.tool_registry_repo.list_discovered_tool_names()
-        )
         request_scope_names = self._get_request_scope_napcat_tool_names(req)
-        excluded_names = set(discovered_names)
-        unlimited_request_injection = (
-            self._is_unlimited_request_tool_injection_enabled()
-        )
-        if unlimited_request_injection:
-            excluded_names.update(request_scope_names)
-        skipped_discovered_names = [
-            record.tool_name
-            for record in platform_records
-            if record.tool_name in excluded_names
-        ]
-        records = [
-            record
-            for record in platform_records
-            if record.tool_name not in excluded_names
-        ][:result_limit_value]
+        records = platform_records[:result_limit_value]
         matched_names = [record.tool_name for record in records]
         self._debug_log(
             "search_tool:matched",
@@ -454,28 +483,12 @@ Returns:
             candidate_limit=candidate_limit,
             candidate_count=len(candidate_records),
             platform_candidate_count=len(platform_records),
-            skipped_discovered_count=len(skipped_discovered_names),
             request_scope_tool_count=len(request_scope_names),
-            unlimited_request_tool_injection=unlimited_request_injection,
             result_limit=result_limit_value,
             matched_count=len(matched_names),
             matched_tools=matched_names,
         )
-        discovered_tool_limit = self._get_discovered_tool_limit()
-        queue = await self.tool_registry_repo.add_discovered_tool_names(
-            matched_names,
-            max_size=discovered_tool_limit,
-        )
-        self._debug_log(
-            "search_tool:queue_updated",
-            queue_count=len(queue),
-        )
-        injected_count = 0
-        if self.config.get("dynamic_injection_enabled", True) is not False:
-            injected_count = self._inject_tool_names_into_request(req, matched_names)
-        else:
-            self._debug_log("search_tool:dynamic_injection_disabled")
-        self._debug_log("search_tool:done", injected_count=injected_count)
+        self._debug_log("search_tool:done", matched_count=len(matched_names))
         return json.dumps(
             {
                 "keyword": keyword,
@@ -483,24 +496,30 @@ Returns:
                 "search_terms": search_terms,
                 "candidate_limit": candidate_limit,
                 "result_limit": result_limit_value,
+                "execution_tool": self.CALL_TOOL_NAME,
+                "next_step": (
+                    "从 matched_tools 中选择最符合目标的工具，调用 napcat_call_tool，"
+                    "tool_name 使用该工具 name，arguments 按 parameters/required_parameters 填写。"
+                ),
                 "matched_tools": [
                     self._serialize_search_tool_record(record)
                     for record in records
                 ],
-                "injected_tools": matched_names,
-                "injected_count": injected_count,
-                "discovered_tool_count": len(queue),
-                "max_discovered_tools": discovered_tool_limit,
+                "injected_tools": [],
+                "injected_count": 0,
+                "discovered_tool_count": 0,
                 "request_scope_tool_count": len(
                     self._get_request_scope_napcat_tool_names(req)
                 ),
-                "unlimited_request_tool_injection": unlimited_request_injection,
-                "skipped_discovered_tools": sorted(skipped_discovered_names),
             },
             ensure_ascii=False,
         )
 
     def _serialize_search_tool_record(self, record) -> dict:
+        parameters = self._load_parameter_specs(getattr(record, "parameters_json", "[]"))
+        required_parameters = self._load_required_parameter_names(
+            getattr(record, "required_parameters_json", "[]")
+        )
         return {
             "name": record.tool_name,
             "endpoint": record.endpoint,
@@ -508,7 +527,237 @@ Returns:
             "namespace": getattr(record, "namespace", ""),
             "risk_level": getattr(record, "risk_level", "low"),
             "requires_confirmation": getattr(record, "requires_confirmation", False),
+            "parameters": parameters,
+            "required_parameters": required_parameters,
+            "call_tool": self.CALL_TOOL_NAME,
+            "call_example": {
+                "tool_name": record.tool_name,
+                "arguments": self._build_call_argument_example(
+                    parameters,
+                    required_parameters,
+                ),
+            },
+            "usage": (
+                f"调用 {self.CALL_TOOL_NAME}，tool_name 填 {record.tool_name!r}，"
+                "arguments 按 parameters 填写；可从当前会话推断的 group_id、user_id、"
+                "message_id 等上下文字段可以省略。"
+            ),
         }
+
+    def _load_parameter_specs(self, parameters_json: str) -> list[dict]:
+        try:
+            parameters = json.loads(parameters_json)
+        except (TypeError, json.JSONDecodeError):
+            return []
+        if not isinstance(parameters, list):
+            return []
+        result = []
+        for parameter in parameters:
+            if not isinstance(parameter, dict) or not parameter.get("name"):
+                continue
+            result.append(
+                {
+                    "name": parameter["name"],
+                    "type": self._normalize_json_schema_type(parameter.get("type")),
+                    "description": parameter.get("description", ""),
+                }
+            )
+        return result
+
+    def _build_call_argument_example(
+        self,
+        parameters: list[dict],
+        required_parameters: list[str],
+    ) -> dict:
+        by_name = {
+            parameter["name"]: parameter
+            for parameter in parameters
+            if isinstance(parameter, dict) and parameter.get("name")
+        }
+        example = {}
+        for name in required_parameters:
+            parameter = by_name.get(name, {})
+            example[name] = self._example_value_for_schema_type(parameter.get("type"))
+        return example
+
+    def _example_value_for_schema_type(self, schema_type: str | None):
+        return {
+            "integer": 123456,
+            "number": 123456,
+            "boolean": True,
+            "array": [],
+            "object": {},
+        }.get(schema_type or "string", "请填写")
+
+    async def _run_call_tool(
+        self,
+        event: AstrMessageEvent,
+        tool_name: str,
+        arguments: dict | str = None,
+    ) -> str:
+        if not self._is_aiocqhttp_event(event):
+            self._debug_log(
+                "call_tool:reject_non_aiocqhttp",
+                event_type=type(event).__name__,
+            )
+            raise ValueError("NapCat call tool requires an aiocqhttp/NapCat message event.")
+
+        normalized_tool_name = str(tool_name or "").strip()
+        self._debug_log("call_tool:start", tool_name=normalized_tool_name)
+        record = self.tool_registry_records_by_name.get(normalized_tool_name)
+        if record is None:
+            self._debug_log("call_tool:unknown_tool", tool_name=normalized_tool_name)
+            return json.dumps(
+                {
+                    "ok": False,
+                    "status": "unknown_tool",
+                    "message": "未找到该 NapCat 工具，请先调用 napcat_search_tools 搜索正确工具名。",
+                    "tool_name": normalized_tool_name,
+                },
+                ensure_ascii=False,
+            )
+
+        if not self._is_tool_available_on_current_platform(record.tool_name):
+            self._debug_log(
+                "call_tool:platform_unavailable",
+                tool_name=record.tool_name,
+                current_platform=self.current_platform_name,
+            )
+            return json.dumps(
+                {
+                    "ok": False,
+                    "status": "platform_unavailable",
+                    "message": "该 NapCat 工具只适用于特定系统，当前系统不可用。",
+                    "tool_name": record.tool_name,
+                    "current_platform": self.current_platform_name,
+                },
+                ensure_ascii=False,
+            )
+
+        handler = getattr(self, record.method_name, None)
+        if handler is None:
+            self._debug_log(
+                "call_tool:missing_handler",
+                tool_name=record.tool_name,
+                method_name=record.method_name,
+            )
+            return json.dumps(
+                {
+                    "ok": False,
+                    "status": "missing_handler",
+                    "message": "插件中没有找到该工具的执行函数，请更新插件或重新同步工具数据库。",
+                    "tool_name": record.tool_name,
+                },
+                ensure_ascii=False,
+            )
+
+        try:
+            call_arguments = self._normalize_call_arguments(arguments)
+        except ValueError as exc:
+            return json.dumps(
+                {
+                    "ok": False,
+                    "status": "invalid_arguments",
+                    "message": str(exc),
+                    "tool_name": record.tool_name,
+                },
+                ensure_ascii=False,
+            )
+
+        required_parameters = self._load_required_parameter_names(
+            record.required_parameters_json
+        )
+        missing_parameters = [
+            name
+            for name in required_parameters
+            if name not in call_arguments or call_arguments[name] is None
+        ]
+        if missing_parameters:
+            self._debug_log(
+                "call_tool:missing_required_arguments",
+                tool_name=record.tool_name,
+                missing_parameters=missing_parameters,
+            )
+            return json.dumps(
+                {
+                    "ok": False,
+                    "status": "missing_required_arguments",
+                    "message": "缺少目标 NapCat 工具必填参数，请按 napcat_search_tools 返回的 required_parameters 补齐。",
+                    "tool_name": record.tool_name,
+                    "missing_parameters": missing_parameters,
+                    "required_parameters": required_parameters,
+                },
+                ensure_ascii=False,
+            )
+
+        allowed_parameters = self._get_callable_argument_names(handler)
+        unknown_parameters = sorted(set(call_arguments) - allowed_parameters)
+        if unknown_parameters:
+            self._debug_log(
+                "call_tool:unknown_arguments",
+                tool_name=record.tool_name,
+                unknown_parameters=unknown_parameters,
+            )
+            return json.dumps(
+                {
+                    "ok": False,
+                    "status": "unknown_arguments",
+                    "message": "目标 NapCat 工具不接受这些参数，请按 napcat_search_tools 返回的 parameters 调整。",
+                    "tool_name": record.tool_name,
+                    "unknown_parameters": unknown_parameters,
+                    "allowed_parameters": sorted(allowed_parameters),
+                },
+                ensure_ascii=False,
+            )
+
+        try:
+            result = await handler(event, **call_arguments)
+        except TypeError as exc:
+            self._debug_log(
+                "call_tool:type_error",
+                tool_name=record.tool_name,
+                error=str(exc),
+            )
+            return json.dumps(
+                {
+                    "ok": False,
+                    "status": "tool_argument_error",
+                    "message": str(exc),
+                    "tool_name": record.tool_name,
+                },
+                ensure_ascii=False,
+            )
+
+        self._debug_log("call_tool:done", tool_name=record.tool_name)
+        return result
+
+    def _normalize_call_arguments(self, arguments: dict | str | None) -> dict:
+        if arguments is None:
+            return {}
+        if isinstance(arguments, str):
+            stripped = arguments.strip()
+            if not stripped:
+                return {}
+            try:
+                arguments = json.loads(stripped)
+            except json.JSONDecodeError as exc:
+                raise ValueError("arguments 必须是对象或可解析为对象的 JSON 字符串。") from exc
+        if not isinstance(arguments, dict):
+            raise ValueError("arguments 必须是对象。")
+        return dict(arguments)
+
+    def _get_callable_argument_names(self, handler) -> set[str]:
+        signature = inspect.signature(handler)
+        names = set()
+        for name, parameter in signature.parameters.items():
+            if name in {"self", "event"}:
+                continue
+            if parameter.kind in {
+                inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                inspect.Parameter.KEYWORD_ONLY,
+            }:
+                names.add(name)
+        return names
 
     def _build_search_terms(self, keyword: str) -> list[str]:
         normalized = keyword.strip().lower()

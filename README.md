@@ -1,6 +1,6 @@
 ﻿# NapCat 函数工具
 
-这是一个 AstrBot 插件，用于把本地文档中的 NapCat / OneBot / go-cqhttp 用户 API 提供为可供 LLM 调用的函数工具。只有 `napcat_search_tools` 搜索入口使用 `@filter.llm_tool` 常驻注册；具体 NapCat 接口工具不使用该装饰器，默认不会把 160+ 个工具常驻注册到 AstrBot 全局工具管理器，而是在工具发现后按需注入到当前请求。
+这是一个 AstrBot 插件，用于把本地文档中的 NapCat / OneBot / go-cqhttp 用户 API 提供为可供 LLM 调用的函数工具。插件只向 LLM 稳定提供 `napcat_search_tools` 和 `napcat_call_tool` 两个入口：先搜索工具能力和参数，再通过通用调用工具执行具体 NapCat API，避免动态改变工具列表影响缓存命中率。
 
 ## 功能
 
@@ -12,12 +12,13 @@
 - 低价值、危险、重复或更适合隐藏的工具候选记录在 `待删除.md`，用于后续决定删除、禁用或从工具发现中隐藏。
 - 复用 AstrBot 默认接入 NapCat 的 `AiocqhttpMessageEvent` 和当前事件的 `event.bot.api.call_action`，不自建 HTTP 客户端。
 - 初始化时创建工具管理数据库 `napcat_fc_tools.db`，记录工具名、API、能力、参数、平台限制、命名空间、搜索别名、风险等级和启用状态，供动态工具发现使用。
-- 具体 NapCat 工具不作为全局工具常驻注册或暴露，而是在 `on_llm_request(priority=-150)` 阶段按搜索发现结果和数据库状态构造请求级工具并注入到当前请求；该优先级会晚于旧上传残留实例执行，确保当前版本同名工具覆盖旧 handler。聊天记录查询统一暴露为 `napcat_get_msg_history`，合并转发和单条转发统一暴露为 `napcat_send_forward_msg`，底层群/私聊/单条接口只作为内部兼容方法保留。
-- `napcat_search_tools` 搜索工具会一直注入到 aiocqhttp/NapCat 请求中。当当前可用工具列表里没有明确可以完成用户目标的 NapCat 工具时，应先调用它进行工具发现。它支持空格分词并发搜索，并会结合工具名、API、能力说明、命名空间、搜索别名和参数名综合排序；然后排除已发现工具，将剩余最相关的一批工具加入持久化发现队列，并立即注入当前请求后续工具调用。可通过 `result_limit` 控制本次加入工具列表的数量，默认 `3`；如果需要更广泛的工具集合，可以多次用同一个关键词搜索，已发现工具会被跳过，后续搜索会继续补充新候选。
+- 具体 NapCat 工具不作为全局工具常驻注册或暴露，`on_llm_request(priority=-150)` 阶段只注入 `napcat_search_tools` 和 `napcat_call_tool` 两个请求级稳定工具；该优先级会晚于旧上传残留实例执行，确保当前版本同名入口覆盖旧 handler。聊天记录查询统一暴露为 `napcat_get_msg_history`，合并转发和单条转发统一暴露为 `napcat_send_forward_msg`，底层群/私聊/单条接口只作为内部兼容方法保留。
+- `napcat_search_tools` 搜索工具会一直注入到 aiocqhttp/NapCat 请求中。当当前可用工具列表里没有明确可以完成用户目标的 NapCat 工具时，应先调用它进行工具发现。它支持空格分词并发搜索，并会结合工具名、API、能力说明、命名空间、搜索别名和参数名综合排序；搜索结果会返回候选工具的用途、参数说明、必填参数和 `napcat_call_tool` 调用样例。搜索不会写入发现队列，也不会把具体 API 工具注入当前请求。可通过 `result_limit` 控制本次返回候选数量，默认 `3`；如果需要更广泛的工具集合，可以多次用同一个关键词或近义词搜索。
+- `napcat_call_tool` 是唯一执行入口，通过 `tool_name` 和 `arguments` 调用搜索到的具体 NapCat 工具。它复用插件内已有 API 方法，因此会保留会话默认参数、回复消息优先、图片自动提取、Ark 自动发送、合并转发和错误 JSON 返回逻辑。
 - 在 aiocqhttp/NapCat 请求中，当前用户文本和 `napcat_search_tools` 搜索关键词里的 `qq`/`QQ` 会归一为 `napcat`，减少模型把 NapCat 平台能力误当作普通 QQ 文本操作的情况。
 - 仅系统专属工具名记录在插件类属性 `WINDOWS_TOOL_NAMES`、`LINUX_TOOL_NAMES`、`MAC_TOOL_NAMES` 中；当前只有 OCR 工具属于 Windows 专属。
 - 信息获取类接口会通过函数 `return` 把 NapCat API 响应返回给 LLM，不直接向当前聊天发送消息。
-- 动态注入的工具会按函数签名补全 JSON Schema 的必填参数；文档标注为可选的参数必须在函数签名中提供默认值，避免 LLM 误以为必填参数可以省略。
+- 搜索结果和通用调用会按函数签名使用必填参数元数据；文档标注为可选的参数必须在函数签名中提供默认值，避免 LLM 误以为必填参数可以省略。
 - NapCat API 业务失败会返回 `api_error` JSON 给 LLM，包含接口名、错误类型、错误消息和实际 payload，便于模型调整参数后重试。
 - NapCat 动作接口如果返回 `None/null`，工具会包装为 `status: ok` JSON，说明接口已调用但没有业务数据，避免 LLM 只看到 `null` 后无法判断调用结果。
 - 当前 NapCat 版本中 `/translate_en2zh` 存在问题，老版本 NapCat 中 `/get_mini_app_ark` 不兼容；`napcat_translate_en2zh` 和 `napcat_get_mini_app_ark` 已临时禁用，不会进入工具搜索、动态发现或请求注入。
@@ -43,9 +44,9 @@
 
 ## 配置
 
-具体 NapCat 工具不会经过 `@filter.llm_tool` 注册，也不会一次性注册到 AstrBot 全局工具管理器。插件只让 `napcat_search_tools` 常驻注册，具体工具会在搜索发现或持久化队列命中时，基于工具数据库记录和插件绑定方法临时构造为当前请求级工具，避免 160+ 个工具导致 AstrBot 内部 hook 或工具管理压力。
+具体 NapCat 工具不会经过 `@filter.llm_tool` 注册，也不会一次性注册到 AstrBot 全局工具管理器。插件只让 `napcat_search_tools` 和 `napcat_call_tool` 常驻注册，并在 aiocqhttp/NapCat 请求阶段注入这两个稳定入口；具体 API 由 `napcat_call_tool` 根据工具数据库记录找到插件绑定方法后执行，避免 160+ 个工具导致 AstrBot 工具列表频繁变化或缓存命中率下降。
 
-插件初始化时会清理全局工具管理器里残留的同名 NapCat 工具，用于兼容从旧版本热更新到当前版本的场景；如果旧版本留下多个同名工具，会循环删除到没有残留。之后所有具体接口工具都只走按需注入。
+插件初始化时会清理全局工具管理器里残留的同名具体 NapCat API 工具，用于兼容从旧版本热更新到当前版本的场景；如果旧版本留下多个同名工具，会循环删除到没有残留。之后所有具体接口都只通过 `napcat_call_tool` 执行。
 
 插件加载时会自动把当前插件目录加入 Python 模块搜索路径，确保 AstrBot 从项目根目录或插件管理器加载 `main.py` 时也能找到内部包 `napcat_fc`。
 
@@ -55,23 +56,19 @@
 
 工具管理数据库位于 AstrBot 插件数据目录，表名为 `napcat_tool`。插件启动时会按当前 `main.py` 中的工具定义同步记录，保留已有 `enabled` 状态并移除已不存在的工具。外部工具发现逻辑可以读取 `enabled`、`namespace`、`aliases_json`、`risk_level`、`requires_confirmation`、`default_discoverable`、`parameters_json`、`required_parameters_json` 和 `platforms_json` 字段进行筛选。
 
-搜索发现队列持久化在 `napcat_discovered_tool` 表中，默认最多保存 20 个工具。重复搜索到同一工具时会去重并刷新到队尾；超过上限时按 FIFO 队列出队。搜索工具每次会先取 `search_candidate_limit` 个候选并跳过已发现工具，默认值为 10，避免高相关旧工具长期占住前三名。已发现工具会在后续请求直接注入，不需要再次做数据库搜索。
+旧版搜索发现队列 `napcat_discovered_tool` 表保留用于数据库兼容和外部实验，但当前默认流程不再写入该队列，也不会根据队列注入具体工具。搜索工具每次会先取 `search_candidate_limit` 个候选，默认值为 10，再按综合相关度返回前 `result_limit` 个候选及调用说明。
 
-如需临时关闭动态注入，可在插件配置中设置 `dynamic_injection_enabled: false`。此时请求阶段仍会先卸载本轮请求里已有的 NapCat 工具，但不会再注入新的 NapCat 工具。
+`dynamic_injection_enabled`、`discovered_tool_limit` 和 `unlimited_request_tool_injection` 为旧版动态注入配置，当前两工具稳定入口模式不再依赖这些配置。请求阶段仍会先卸载本轮请求里已有的具体 NapCat API 工具，再注入 `napcat_search_tools` 和 `napcat_call_tool`。
 
 如需调整搜索候选池大小，可在插件配置中设置 `search_candidate_limit`，默认 `10`，最小有效值为 `1`。
 
-如需调整已发现工具持久化队列上限，可在插件配置中设置 `discovered_tool_limit`，默认 `20`，最小有效值为 `1`。
-
-如需让同一轮 LLM 请求中通过 `napcat_search_tools` 添加的工具不受持久化队列上限限制，可设置 `unlimited_request_tool_injection: true`。开启后，本轮请求内多次搜索会继续注入新工具；请求结束后的下一轮仍按 `discovered_tool_limit` 只保留持久化队列上限内的工具。
-
 如需控制上下文 ID 容错，可设置 `fallback_invalid_context_ids`，默认 `true`。开启后，`group_id`、`user_id`、`self_id`、Ark 自动发送目标 `send_group_id`、`send_user_id` 等可从当前事件补齐或回退的 ID 参数如果小于 6 位或不是纯数字，插件会回退为当前会话默认值，并在后台通过 AstrBot logger 输出警告；关闭后只对 `None`、`0` 和空字符串走默认补齐。
 
-如需排查动态注入、搜索或数据库同步流程，可在插件配置中设置 `debug: true`。开启后插件会使用 AstrBot 提供的 `logger.debug` 输出关键运行节点日志。调试日志包含 `elapsed_ms` 和 `delta_ms`，用于定位搜索、数据库读取、工具注入等性能瓶颈。
+如需排查搜索、通用调用或数据库同步流程，可在插件配置中设置 `debug: true`。开启后插件会使用 AstrBot 提供的 `logger.debug` 输出关键运行节点日志。调试日志包含 `elapsed_ms` 和 `delta_ms`，用于定位搜索、数据库读取、工具调用等性能瓶颈。
 
 所有 NapCat 相关请求级工具只会在 `AiocqhttpMessageEvent` 事件中处理。非 aiocqhttp/NapCat 消息事件会卸载本轮请求里已有的 NapCat 工具，并跳过搜索工具和具体 NapCat 工具注入。
 
-系统专属工具会在搜索和注入阶段按当前运行系统过滤。例如 Windows 专属 OCR 工具只会在 Windows 环境中进入搜索发现队列并被注入。
+系统专属工具会在搜索和通用调用阶段按当前运行系统过滤。例如 Windows 专属 OCR 工具只会在 Windows 环境中返回搜索结果并允许调用。
 
 搜索综合评分兼容旧版工具数据库仓库对象；如果运行环境暂时只更新了 `main.py`，仍会回退到旧评分逻辑，避免搜索工具因为评分方法缺失而中断。
 
@@ -89,12 +86,15 @@ python scripts/package_plugin.py
 
 ## 使用方式
 
-LLM 调用具体接口时使用对应工具，例如 `napcat_send_group_msg`：
+LLM 调用具体接口时先使用 `napcat_search_tools` 搜索能力，例如搜索“发送群消息”。搜索结果会返回候选工具名、参数说明和 `napcat_call_tool` 调用样例。随后统一调用 `napcat_call_tool`，例如执行 `napcat_send_group_msg`：
 
 ```json
 {
-  "message": "hello",
-  "auto_escape": false
+  "tool_name": "napcat_send_group_msg",
+  "arguments": {
+    "message": "hello",
+    "auto_escape": false
+  }
 }
 ```
 
@@ -102,17 +102,20 @@ LLM 调用具体接口时使用对应工具，例如 `napcat_send_group_msg`：
 
 ```json
 {
-  "group_id": "123456",
-  "message": "hello",
-  "auto_escape": false
+  "tool_name": "napcat_send_group_msg",
+  "arguments": {
+    "group_id": "123456",
+    "message": "hello",
+    "auto_escape": false
+  }
 }
 ```
 
-这些工具必须在 aiocqhttp/NapCat 消息事件上下文中使用；非 aiocqhttp 平台事件不会注入 NapCat 工具。
+这些工具必须在 aiocqhttp/NapCat 消息事件上下文中使用；非 aiocqhttp 平台事件不会注入 NapCat 搜索和调用入口。
 
 获取信息类工具，例如 `napcat_get_login_info`、`napcat_get_group_info`、`napcat_fetch_custom_face`、`napcat_can_send_image`，返回值会作为工具结果交给 LLM 继续理解和组织回复，而不是由插件直接发送到聊天窗口。
 
-发送 Ark 分享卡片时直接调用 `napcat_send_group_ark_share`、`napcat_send_ark_share`、`napcat_arksharegroup` 或 `napcat_arksharepeer`。这些工具会自动包装 OneBot `json` 消息段并发送到 `send_group_id`、`send_user_id` 或当前会话。
+发送 Ark 分享卡片时通过 `napcat_call_tool` 调用 `napcat_send_group_ark_share`、`napcat_send_ark_share`、`napcat_arksharegroup` 或 `napcat_arksharepeer`。这些工具会自动包装 OneBot `json` 消息段并发送到 `send_group_id`、`send_user_id` 或当前会话。
 
 `napcat_send_poke`、`napcat_friend_poke` 和 `napcat_group_poke` 的 `target_id` 仅作为兼容别名使用，实际请求 NapCat 时会映射为 `user_id`，不会把 `target_id` 字段传给 NapCat。在群聊中省略 `group_id` 会默认使用当前群号；在私聊中省略 `group_id` 会按私聊戳一戳处理，群聊专用工具缺群号时会返回可读提示。
 

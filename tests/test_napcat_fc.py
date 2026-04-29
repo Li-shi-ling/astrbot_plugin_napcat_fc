@@ -2185,6 +2185,7 @@ async def test_registered_search_tool_uses_remembered_request_context():
         ]
         await plugin.tool_registry_repo.replace_all_tools(records)
         event = make_aiocqhttp_event()
+        event.role = "admin"
         req = ProviderRequest()
         req.func_tool = ToolSet()
         await plugin.inject_napcat_tools_on_llm_request(event, req)
@@ -2206,6 +2207,7 @@ async def test_registered_search_tool_uses_remembered_request_context():
 @pytest.mark.asyncio
 async def test_call_tool_invokes_existing_tool_with_context_defaults():
     event = make_aiocqhttp_event(group_id="654321", user_id="123456")
+    event.role = "admin"
     plugin = NapCatFunctionToolsPlugin(context=FakeContext([]))
 
     result = await plugin.napcat_call_tool(
@@ -2232,6 +2234,7 @@ async def test_call_tool_invokes_existing_tool_with_context_defaults():
 @pytest.mark.asyncio
 async def test_call_tool_accepts_json_string_arguments():
     event = make_aiocqhttp_event(group_id="654321", user_id="123456")
+    event.role = "admin"
     plugin = NapCatFunctionToolsPlugin(context=FakeContext([]))
 
     result = await plugin.napcat_call_tool(
@@ -2250,6 +2253,7 @@ async def test_call_tool_accepts_json_string_arguments():
 @pytest.mark.asyncio
 async def test_call_tool_returns_friendly_error_for_unknown_tool():
     event = make_aiocqhttp_event(group_id="654321", user_id="123456")
+    event.role = "admin"
     plugin = NapCatFunctionToolsPlugin(context=FakeContext([]))
 
     result = await plugin.napcat_call_tool(
@@ -2266,6 +2270,7 @@ async def test_call_tool_returns_friendly_error_for_unknown_tool():
 @pytest.mark.asyncio
 async def test_call_tool_returns_friendly_error_for_missing_required_arguments():
     event = make_aiocqhttp_event(group_id="654321", user_id="123456")
+    event.role = "admin"
     plugin = NapCatFunctionToolsPlugin(context=FakeContext([]))
 
     result = await plugin.napcat_call_tool(
@@ -2300,6 +2305,7 @@ async def test_search_tool_normalizes_qq_keyword_to_napcat():
         ]
         await plugin.tool_registry_repo.replace_all_tools(records)
         event = make_aiocqhttp_event()
+        event.role = "admin"
         req = ProviderRequest()
         req.func_tool = ToolSet()
         await plugin.inject_napcat_tools_on_llm_request(event, req)
@@ -2321,6 +2327,7 @@ async def test_search_tool_normalizes_qq_keyword_to_napcat():
 @pytest.mark.asyncio
 async def test_registered_search_tool_returns_error_without_remembered_request_context():
     event = make_aiocqhttp_event(user_id="123456")
+    event.role = "admin"
     plugin = NapCatFunctionToolsPlugin(context=FakeContext([]))
 
     result = await plugin.napcat_search_tools_tool(event, keyword="send msg")
@@ -2572,3 +2579,52 @@ async def test_search_tool_filters_platform_specific_results_before_suppressing(
             path = Path(str(db_path) + suffix)
             if path.exists():
                 path.unlink()
+
+
+@pytest.mark.asyncio
+async def test_search_tool_rejects_non_admin():
+    event = make_aiocqhttp_event(group_id="654321", user_id="123456")
+    plugin = NapCatFunctionToolsPlugin(context=FakeContext([]))
+    result = await plugin.napcat_search_tools_tool(event, keyword="send msg")
+    payload = json.loads(result)
+    assert payload["ok"] is False
+    assert "权限不足" in payload["message"]
+
+
+@pytest.mark.asyncio
+async def test_call_tool_rejects_non_admin():
+    event = make_aiocqhttp_event(group_id="654321", user_id="123456")
+    plugin = NapCatFunctionToolsPlugin(context=FakeContext([]))
+    result = await plugin.napcat_call_tool(
+        event,
+        tool_name="napcat_send_msg",
+        arguments={"message_type": "group", "message": "hello"},
+    )
+    payload = json.loads(result)
+    assert payload["ok"] is False
+    assert "权限不足" in payload["message"]
+
+
+@pytest.mark.asyncio
+async def test_search_tool_allows_admin():
+    event = make_aiocqhttp_event(group_id="654321", user_id="123456")
+    event.role = "admin"
+    plugin = NapCatFunctionToolsPlugin(context=FakeContext([]))
+    result = await plugin.napcat_search_tools_tool(event, keyword="send msg")
+    payload = json.loads(result)
+    assert payload["ok"] is False
+    assert "LLM 请求上下文" in payload["message"]
+
+
+@pytest.mark.asyncio
+async def test_call_tool_allows_admin():
+    event = make_aiocqhttp_event(group_id="654321", user_id="123456")
+    event.role = "admin"
+    plugin = NapCatFunctionToolsPlugin(context=FakeContext([]))
+    result = await plugin.napcat_call_tool(
+        event,
+        tool_name="napcat_send_msg",
+        arguments={"message_type": "group", "message": "hello"},
+    )
+    payload = json.loads(result)
+    assert payload["status"] == "ok"

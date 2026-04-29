@@ -1,38 +1,32 @@
 {
   "debug": {
-    "description": "\u662f\u5426\u542f\u7528\u8c03\u8bd5\u65e5\u5fd7\u3002\u5f00\u542f\u540e\u63d2\u4ef6\u8fd0\u884c\u5230\u7684\u5173\u952e\u8282\u70b9\u4f1a\u901a\u8fc7 AstrBot logger.debug \u8f93\u51fa\u3002",
+    "description": "是否启用调试日志。开启后插件运行到的关键节点会通过 AstrBot logger.debug 输出。",
     "type": "bool",
-    "hint": "\u6392\u67e5\u5de5\u5177\u641c\u7d22\u3001\u52a8\u6001\u6ce8\u5165\u3001\u6570\u636e\u5e93\u540c\u6b65\u95ee\u9898\u65f6\u5f00\u542f\uff1b\u6b63\u5e38\u4f7f\u7528\u5efa\u8bae\u5173\u95ed\u3002",
+    "hint": "排查工具搜索、工具调用、搜索屏蔽队列、数据库同步问题时开启；正常使用建议关闭。",
     "default": false
-  },
-  "dynamic_injection_enabled": {
-    "description": "\u662f\u5426\u5728 LLM \u8bf7\u6c42\u9636\u6bb5\u6ce8\u5165\u5df2\u53d1\u73b0\u7684 NapCat \u5de5\u5177\u3002\u5173\u95ed\u540e\u4ecd\u4fdd\u7559\u641c\u7d22\u5de5\u5177\uff0c\u4f46\u4e0d\u4f1a\u6ce8\u5165\u5df2\u53d1\u73b0\u5de5\u5177\u3002",
-    "type": "bool",
-    "hint": "\u4fdd\u6301\u5f00\u542f\u53ef\u8ba9 napcat_search_tools \u641c\u7d22\u5230\u7684\u5de5\u5177\u5728\u540e\u7eed\u8bf7\u6c42\u4e2d\u7ee7\u7eed\u53ef\u7528\u3002",
-    "default": true
   },
   "search_candidate_limit": {
-    "description": "NapCat \u641c\u7d22\u5de5\u5177\u6bcf\u6b21\u53c2\u4e0e\u7efc\u5408\u6392\u5e8f\u7684\u5019\u9009\u5de5\u5177\u6570\u91cf\u3002",
+    "description": "NapCat 搜索工具每次参与综合排序的候选工具数量。",
     "type": "int",
-    "hint": "\u9ed8\u8ba4 10\u3002\u8c03\u5927\u53ef\u4ee5\u8ba9\u5df2\u53d1\u73b0\u5de5\u5177\u88ab\u8df3\u8fc7\u540e\u4ecd\u6709\u66f4\u591a\u65b0\u5de5\u5177\u8fdb\u5165\u5019\u9009\uff0c\u4f46\u4f1a\u589e\u52a0\u5c11\u91cf\u6570\u636e\u5e93\u641c\u7d22\u548c\u6392\u5e8f\u5f00\u9500\u3002\u6700\u5c0f\u6709\u6548\u503c\u4e3a 1\u3002",
+    "hint": "默认 10。调大可以让被近期屏蔽的工具跳过后仍有更多新工具进入候选，但会增加少量数据库搜索和排序开销。最小有效值为 1。",
     "default": 10
   },
-  "discovered_tool_limit": {
-    "description": "NapCat \u5df2\u53d1\u73b0\u5de5\u5177\u6301\u4e45\u5316\u961f\u5217\u7684\u6700\u5927\u4fdd\u5b58\u6570\u91cf\u3002",
-    "type": "int",
-    "hint": "\u9ed8\u8ba4 20\u3002\u641c\u7d22\u5230\u7684\u5de5\u5177\u4f1a\u6309 FIFO \u961f\u5217\u4fdd\u7559\uff0c\u8d85\u8fc7\u4e0a\u9650\u65f6\u4f1a\u79fb\u9664\u6700\u65e9\u53d1\u73b0\u7684\u5de5\u5177\u3002\u6700\u5c0f\u6709\u6548\u503c\u4e3a 1\u3002",
-    "default": 20
+  "search_result_format": {
+    "description": "NapCat 搜索工具的结果格式。pipe 和 tsv 为完整文本调用说明，json 为完整结构化 JSON。",
+    "type": "string",
+    "hint": "默认 pipe。pipe 和 tsv 会返回每个候选工具的用途、风险信息、完整参数说明、必填参数、调用样例和 napcat_call_tool 使用说明；json 返回完整结构化对象。可选值：pipe、tsv、json。",
+    "default": "pipe"
   },
-  "unlimited_request_tool_injection": {
-    "description": "\u662f\u5426\u5141\u8bb8\u540c\u4e00\u8f6e LLM \u8bf7\u6c42\u4e2d\u901a\u8fc7\u641c\u7d22\u6ce8\u5165\u7684 NapCat \u5de5\u5177\u4e0d\u53d7\u6301\u4e45\u5316\u961f\u5217\u4e0a\u9650\u9650\u5236\u3002",
-    "type": "bool",
-    "hint": "\u9ed8\u8ba4\u5173\u95ed\u3002\u5f00\u542f\u540e\uff0c\u672c\u8f6e\u8bf7\u6c42\u5185\u591a\u6b21\u8c03\u7528 napcat_search_tools \u53ef\u7ee7\u7eed\u6ce8\u5165\u66f4\u591a\u5de5\u5177\uff1b\u8bf7\u6c42\u7ed3\u675f\u540e\u4ecd\u4f1a\u6309 discovered_tool_limit \u88c1\u526a\u6301\u4e45\u5316\u961f\u5217\uff0c\u4e0b\u4e00\u8f6e\u53ea\u4fdd\u7559\u4e0a\u9650\u5185\u5de5\u5177\u3002",
-    "default": false
+  "search_result_suppress_turns": {
+    "description": "NapCat 搜索工具返回过的工具在同一会话内被临时排除搜索的对话轮数。",
+    "type": "int",
+    "hint": "默认 3。搜索结果返回过的工具会在接下来的 N 次 LLM 请求中不再被搜索到，避免重复返回同一批工具；小于等于 0 表示直到聊天历史清空前都不再搜索到这些工具。插件会根据 req.contexts 长度回退判断聊天历史被清理并自动重置队列。",
+    "default": 3
   },
   "fallback_invalid_context_ids": {
-    "description": "\u662f\u5426\u5728 group_id\u3001user_id\u3001self_id \u7b49\u4e0a\u4e0b\u6587 ID \u53c2\u6570\u5c0f\u4e8e 6 \u4f4d\u6216\u4e0d\u662f\u7eaf\u6570\u5b57\u65f6\uff0c\u81ea\u52a8\u56de\u9000\u4e3a\u5f53\u524d\u4f1a\u8bdd\u9ed8\u8ba4\u503c\u5e76\u8f93\u51fa\u8b66\u544a\u65e5\u5fd7\u3002",
+    "description": "是否在 group_id、user_id、self_id 等上下文 ID 参数小于 6 位或不是纯数字时，自动回退为当前会话默认值并输出警告日志。",
     "type": "bool",
-    "hint": "\u9ed8\u8ba4\u5f00\u542f\u3002\u7528\u4e8e\u5bb9\u9519 LLM \u8bef\u4f20 0\u3001\u77ed ID \u6216\u975e\u6cd5 ID\uff0c\u9632\u6b62\u660e\u663e\u9519\u8bef\u7684\u76ee\u6807 ID \u88ab\u539f\u6837\u53d1\u9001\u7ed9 NapCat\u3002",
+    "hint": "默认开启。用于容错 LLM 误传 0、短 ID 或非法 ID，防止明显错误的目标 ID 被原样发送给 NapCat。",
     "default": true
   }
 }

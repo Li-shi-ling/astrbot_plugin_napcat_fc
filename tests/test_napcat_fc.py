@@ -142,6 +142,7 @@ def make_aiocqhttp_event(
     message_components: list | None = None,
     raw_message=None,
     message_str: str = "",
+    is_admin: bool = True,
 ):
     message = AstrBotMessage()
     message.type = MessageType.GROUP_MESSAGE if group_id else MessageType.FRIEND_MESSAGE
@@ -153,7 +154,7 @@ def make_aiocqhttp_event(
     message.group_id = group_id
     message.session_id = group_id or user_id
     message.raw_message = raw_message
-    return AiocqhttpMessageEvent(
+    event = AiocqhttpMessageEvent(
         message_str=message_str,
         message_obj=message,
         platform_meta=PlatformMetadata(
@@ -164,6 +165,9 @@ def make_aiocqhttp_event(
         session_id=group_id or user_id,
         bot=FakeBot(),
     )
+    if is_admin:
+        event.role = "admin"
+    return event
 
 
 def test_discover_endpoint_specs_finds_napcat_docs():
@@ -178,12 +182,13 @@ def test_discover_endpoint_specs_finds_napcat_docs():
     assert len(endpoints) >= 100
 
 
-def test_only_search_tool_uses_llm_tool_decorator_and_api_tools_use_markers():
+def test_only_search_and_call_tools_use_llm_tool_decorator_and_api_tools_use_markers():
     plugin_dir = Path(__file__).resolve().parents[1]
     source = (plugin_dir / "main.py").read_text(encoding="utf-8")
 
-    assert source.count("@filter.llm_tool") == 1
+    assert source.count("@filter.llm_tool") == 2
     assert "@filter.llm_tool(name='napcat_search_tools')" in source
+    assert "@filter.llm_tool(name='napcat_call_tool')" in source
     assert source.count("# napcat_tool:") == 160
     assert "napcat_call_api" not in source
     assert "# napcat_tool: napcat_send_msg" in source
@@ -1378,15 +1383,6 @@ async def test_tool_registry_repo_roundtrip():
         assert target is not None
         assert target.enabled is False
 
-        assert await repo.add_discovered_tool_names(
-            ["tool_a", "tool_b", "tool_a", "tool_c"],
-            max_size=3,
-        ) == ["tool_b", "tool_a", "tool_c"]
-        assert await repo.add_discovered_tool_names(["tool_d"], max_size=3) == [
-            "tool_a",
-            "tool_c",
-            "tool_d",
-        ]
     finally:
         await db.close()
         for suffix in ("", "-wal", "-shm"):
@@ -1539,6 +1535,17 @@ async def test_tool_db_init_migrates_old_tool_table_metadata_columns():
         assert json.loads(migrated.aliases_json)
         assert migrated.risk_level == "low"
         assert migrated.default_discoverable is True
+        conn = sqlite3.connect(db_path)
+        try:
+            table_names = {
+                row[0]
+                for row in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type = 'table'"
+                )
+            }
+        finally:
+            conn.close()
+        assert "napcat_discovered_tool" not in table_names
     finally:
         await db.close()
         for suffix in ("", "-wal", "-shm"):
@@ -1709,24 +1716,36 @@ def test_search_result_serialization_accepts_legacy_record_without_metadata():
         "namespace": "",
         "risk_level": "low",
         "requires_confirmation": False,
+        "parameters": [],
+        "required_parameters": [],
+        "call_tool": "napcat_call_tool",
+        "call_example": {
+            "tool_name": "napcat_get_version_info",
+            "arguments": {},
+        },
+        "usage": (
+            "调用 napcat_call_tool，tool_name 填 'napcat_get_version_info'，"
+            "arguments 按 parameters 填写；可从当前会话推断的 group_id、user_id、"
+            "message_id 等上下文字段可以省略。"
+        ),
     }
 
 
-def test_discovered_tool_limit_uses_config_with_default_and_minimum():
+def test_search_result_suppress_turns_uses_config_with_default_and_invalid_fallback():
     plugin = NapCatFunctionToolsPlugin(context=FakeContext([]))
-    assert plugin._get_discovered_tool_limit() == 20
+    assert plugin._get_search_result_suppress_turns() == 3
 
-    plugin.config["discovered_tool_limit"] = 7
-    assert plugin._get_discovered_tool_limit() == 7
+    plugin.config["search_result_suppress_turns"] = 7
+    assert plugin._get_search_result_suppress_turns() == 7
 
-    plugin.config["discovered_tool_limit"] = "3"
-    assert plugin._get_discovered_tool_limit() == 3
+    plugin.config["search_result_suppress_turns"] = "0"
+    assert plugin._get_search_result_suppress_turns() == 0
 
-    plugin.config["discovered_tool_limit"] = 0
-    assert plugin._get_discovered_tool_limit() == 1
+    plugin.config["search_result_suppress_turns"] = -1
+    assert plugin._get_search_result_suppress_turns() == -1
 
-    plugin.config["discovered_tool_limit"] = "invalid"
-    assert plugin._get_discovered_tool_limit() == 20
+    plugin.config["search_result_suppress_turns"] = "invalid"
+    assert plugin._get_search_result_suppress_turns() == 3
 
 
 def test_search_result_limit_uses_argument_with_default_and_minimum():
@@ -1738,8 +1757,22 @@ def test_search_result_limit_uses_argument_with_default_and_minimum():
     assert plugin._get_search_result_limit("invalid") == 3
 
 
+def test_search_result_format_uses_config_with_default_and_fallback():
+    plugin = NapCatFunctionToolsPlugin(context=FakeContext([]))
+    assert plugin._get_search_result_format() == "pipe"
+
+    plugin.config["search_result_format"] = "tsv"
+    assert plugin._get_search_result_format() == "tsv"
+
+    plugin.config["search_result_format"] = "JSON"
+    assert plugin._get_search_result_format() == "json"
+
+    plugin.config["search_result_format"] = "invalid"
+    assert plugin._get_search_result_format() == "pipe"
+
+
 @pytest.mark.asyncio
-async def test_on_llm_request_injects_discovered_tools_as_request_scope_copies():
+async def test_on_llm_request_injects_only_stable_search_and_call_tools():
     source_tool = make_function_tool("napcat_send_msg", active=False)
     stale_tool = make_function_tool("napcat_get_login_info", active=True)
     other_tool = make_function_tool("other_tool", active=True)
@@ -1759,9 +1792,6 @@ async def test_on_llm_request_injects_discovered_tools_as_request_scope_copies()
             if record.tool_name == "napcat_send_msg"
         ]
         await plugin.tool_registry_repo.replace_all_tools(records)
-        await plugin.tool_registry_repo.replace_discovered_tool_names(
-            ["napcat_send_msg"]
-        )
         req = ProviderRequest()
         req.func_tool = ToolSet([stale_tool, other_tool])
 
@@ -1770,10 +1800,8 @@ async def test_on_llm_request_injects_discovered_tools_as_request_scope_copies()
         assert req.func_tool.get_tool("napcat_get_login_info") is None
         assert req.func_tool.get_tool("other_tool") is other_tool
         assert req.func_tool.get_tool(plugin.SEARCH_TOOL_NAME) is not None
-        injected = req.func_tool.get_tool("napcat_send_msg")
-        assert injected is not None
-        assert injected is not source_tool
-        assert injected.active is True
+        assert req.func_tool.get_tool(plugin.CALL_TOOL_NAME) is not None
+        assert req.func_tool.get_tool("napcat_send_msg") is None
         assert source_tool.active is False
     finally:
         await plugin.tool_db.close()
@@ -1784,7 +1812,7 @@ async def test_on_llm_request_injects_discovered_tools_as_request_scope_copies()
 
 
 @pytest.mark.asyncio
-async def test_on_llm_request_builds_discovered_tools_in_lazy_mode_without_global_registration():
+async def test_on_llm_request_injects_stable_two_tool_mode_without_discovered_queue():
     plugin = NapCatFunctionToolsPlugin(
         context=FakeContext([]),
     )
@@ -1803,21 +1831,18 @@ async def test_on_llm_request_builds_discovered_tools_in_lazy_mode_without_globa
             if record.tool_name == "napcat_send_msg"
         ]
         await plugin.tool_registry_repo.replace_all_tools(records)
-        await plugin.tool_registry_repo.replace_discovered_tool_names(
-            ["napcat_send_msg"]
-        )
 
         req = ProviderRequest()
         req.func_tool = ToolSet()
         await plugin.inject_napcat_tools_on_llm_request(make_aiocqhttp_event(), req)
 
-        injected = req.func_tool.get_tool("napcat_send_msg")
-        assert injected is not None
-        assert injected.active is True
-        assert injected.handler == plugin.napcat_send_msg_tool
-        assert "message" in injected.parameters["properties"]
-        assert injected.parameters["required"] == ["message", "message_type"]
-        assert "group_id" not in injected.parameters["required"]
+        assert req.func_tool.get_tool("napcat_send_msg") is None
+        assert req.func_tool.get_tool(plugin.SEARCH_TOOL_NAME) is not None
+        call_tool = req.func_tool.get_tool(plugin.CALL_TOOL_NAME)
+        assert call_tool is not None
+        assert call_tool.parameters["required"] == ["tool_name"]
+        assert "arguments" in call_tool.parameters["properties"]
+        assert "arguments" not in call_tool.parameters["required"]
     finally:
         await plugin.tool_db.close()
         for suffix in ("", "-wal", "-shm"):
@@ -1846,6 +1871,81 @@ def test_search_tool_schema_marks_keyword_required_only():
     assert tool.parameters["required"] == ["keyword"]
     assert "result_limit" in tool.parameters["properties"]
     assert "result_limit" not in tool.parameters["required"]
+
+
+def test_call_tool_schema_marks_tool_name_required_only():
+    plugin = NapCatFunctionToolsPlugin(context=FakeContext([]))
+    req = ProviderRequest()
+    req.func_tool = ToolSet()
+
+    tool = plugin._build_call_tool(req)
+
+    assert tool.parameters["required"] == ["tool_name"]
+    assert "arguments" in tool.parameters["properties"]
+    assert "arguments" not in tool.parameters["required"]
+
+
+def test_napcat_llm_request_hook_runs_after_legacy_uploaded_instances():
+    source = (Path(__file__).resolve().parents[1] / "main.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert "@filter.on_llm_request(priority=-150)" in source
+
+
+def test_album_media_list_schema_keeps_attach_info_optional():
+    plugin = NapCatFunctionToolsPlugin(context=FakeContext([]))
+    tool = plugin._build_tool_from_registry_record("napcat_get_group_album_media_list")
+
+    assert tool is not None
+    assert tool.parameters["required"] == ["album_id"]
+    assert "attach_info" in tool.parameters["properties"]
+    assert "attach_info" not in tool.parameters["required"]
+
+
+@pytest.mark.asyncio
+async def test_album_media_list_defaults_attach_info_to_empty_string():
+    event = make_aiocqhttp_event(group_id="654321", user_id="123456")
+    plugin = NapCatFunctionToolsPlugin(context=None)
+
+    result = await plugin.napcat_get_group_album_media_list_tool(
+        event,
+        album_id="album_1",
+    )
+
+    assert '"status": "ok"' in result
+    assert event.bot.api.calls == [
+        (
+            "get_group_album_media_list",
+            {"album_id": "album_1", "attach_info": "", "group_id": 654321},
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_album_media_like_payload_uses_documented_argument_order():
+    event = make_aiocqhttp_event(group_id="654321", user_id="123456")
+    plugin = NapCatFunctionToolsPlugin(context=None)
+
+    result = await plugin.napcat_set_group_album_media_like_tool(
+        event,
+        album_id="album_1",
+        lloc="media_lloc",
+        id="like_key",
+        set=True,
+    )
+
+    assert '"status": "ok"' in result
+    action, payload = event.bot.api.calls[0]
+    assert action == "set_group_album_media_like"
+    assert list(payload.keys()) == ["group_id", "album_id", "lloc", "id", "set"]
+    assert payload == {
+        "group_id": 654321,
+        "album_id": "album_1",
+        "lloc": "media_lloc",
+        "id": "like_key",
+        "set": True,
+    }
 
 
 def test_no_optional_doc_parameter_is_required_by_signature():
@@ -1879,6 +1979,7 @@ async def test_on_llm_request_skips_napcat_tools_for_non_aiocqhttp_events():
 
     assert req.func_tool.get_tool("napcat_get_login_info") is None
     assert req.func_tool.get_tool(plugin.SEARCH_TOOL_NAME) is None
+    assert req.func_tool.get_tool(plugin.CALL_TOOL_NAME) is None
     assert req.func_tool.get_tool("napcat_send_msg") is None
     assert req.func_tool.get_tool("other_tool") is other_tool
 
@@ -1891,7 +1992,6 @@ async def test_llm_request_normalizes_qq_keyword_to_napcat_for_current_user_text
     )
     plugin = NapCatFunctionToolsPlugin(
         context=FakeContext([]),
-        config={"dynamic_injection_enabled": False},
     )
     req = ProviderRequest(
         prompt="帮我找 qq 打卡工具",
@@ -1919,15 +2019,16 @@ async def test_llm_request_normalizes_qq_keyword_to_napcat_for_current_user_text
     assert req.contexts[0]["content"][0]["text"] == "当前用户说 napcat 群打卡"
     assert req.contexts[1]["content"] == "QQ 这个词不应在助手历史里改写"
     assert req.func_tool.get_tool(plugin.SEARCH_TOOL_NAME) is not None
+    assert req.func_tool.get_tool(plugin.CALL_TOOL_NAME) is not None
 
 
 @pytest.mark.asyncio
-async def test_search_tool_discovers_persists_and_immediately_injects_tools():
+async def test_search_tool_returns_call_instructions_without_injecting_tools():
     send_group_tool = make_function_tool("napcat_send_msg", active=False)
     get_group_tool = make_function_tool("napcat_get_group_list", active=False)
     plugin = NapCatFunctionToolsPlugin(
         context=FakeContext([send_group_tool, get_group_tool]),
-        config={"discovered_tool_limit": 1},
+        config={"search_result_format": "json"},
     )
     db_path = (
         Path(__file__).resolve().parents[1]
@@ -1959,11 +2060,107 @@ async def test_search_tool_discovers_persists_and_immediately_injects_tools():
         payload = json.loads(result)
 
         assert payload["result_limit"] == 3
+        assert payload["execution_tool"] == plugin.CALL_TOOL_NAME
         assert 1 <= len(payload["matched_tools"]) <= 3
-        assert payload["injected_count"] >= 1
-        assert req.func_tool.get_tool("napcat_send_msg") is not None
-        assert payload["max_discovered_tools"] == 1
-        assert len(await plugin.tool_registry_repo.list_discovered_tool_names()) <= 1
+        first_match = payload["matched_tools"][0]
+        assert first_match["call_tool"] == plugin.CALL_TOOL_NAME
+        assert first_match["call_example"]["tool_name"] == first_match["name"]
+        assert "parameters" in first_match
+        assert "required_parameters" in first_match
+        assert payload["injected_count"] == 0
+        assert req.func_tool.get_tool("napcat_send_msg") is None
+    finally:
+        await plugin.tool_db.close()
+        for suffix in ("", "-wal", "-shm"):
+            path = Path(str(db_path) + suffix)
+            if path.exists():
+                path.unlink()
+
+
+@pytest.mark.asyncio
+async def test_search_tool_defaults_to_complete_pipe_result():
+    plugin = NapCatFunctionToolsPlugin(context=FakeContext([]))
+    db_path = (
+        Path(__file__).resolve().parents[1]
+        / f".test-pipe-search-tools-{uuid.uuid4().hex}.db"
+    )
+    plugin.tool_db = ToolDBManager(str(db_path))
+    plugin.tool_registry_repo = ToolRegistryRepo(plugin.tool_db)
+    await plugin.tool_db.init_db()
+    try:
+        records = [
+            record
+            for record in build_tool_registry_data(NapCatFunctionToolsPlugin)
+            if record.tool_name == "napcat_send_msg"
+        ]
+        await plugin.tool_registry_repo.replace_all_tools(records)
+        req = ProviderRequest()
+        req.func_tool = ToolSet()
+
+        result = await plugin._run_search_tool(
+            make_aiocqhttp_event(),
+            req,
+            keyword="send msg",
+            result_limit=1,
+        )
+
+        assert result.startswith("format=pipe\n")
+        assert "execution_tool=napcat_call_tool" in result
+        assert "tool|napcat_send_msg" in result
+        assert "endpoint|send_msg" in result
+        assert "required_parameters|message,message_type" in result
+        assert "parameter|message|string|required|" in result
+        assert "parameter|message_type|string|required|" in result
+        assert "parameter|group_id|integer|optional|" in result
+        assert "call_tool|napcat_call_tool" in result
+        assert '"tool_name":"napcat_send_msg"' in result
+        assert "usage|调用 napcat_call_tool" in result
+    finally:
+        await plugin.tool_db.close()
+        for suffix in ("", "-wal", "-shm"):
+            path = Path(str(db_path) + suffix)
+            if path.exists():
+                path.unlink()
+
+
+@pytest.mark.asyncio
+async def test_search_tool_can_return_complete_tsv_result():
+    plugin = NapCatFunctionToolsPlugin(
+        context=FakeContext([]),
+        config={"search_result_format": "tsv"},
+    )
+    db_path = (
+        Path(__file__).resolve().parents[1]
+        / f".test-tsv-search-tools-{uuid.uuid4().hex}.db"
+    )
+    plugin.tool_db = ToolDBManager(str(db_path))
+    plugin.tool_registry_repo = ToolRegistryRepo(plugin.tool_db)
+    await plugin.tool_db.init_db()
+    try:
+        records = [
+            record
+            for record in build_tool_registry_data(NapCatFunctionToolsPlugin)
+            if record.tool_name == "napcat_send_msg"
+        ]
+        await plugin.tool_registry_repo.replace_all_tools(records)
+        req = ProviderRequest()
+        req.func_tool = ToolSet()
+
+        result = await plugin._run_search_tool(
+            make_aiocqhttp_event(),
+            req,
+            keyword="send msg",
+            result_limit=1,
+        )
+
+        assert result.startswith("format=tsv\n")
+        assert "tool\tnapcat_send_msg" in result
+        assert "endpoint\tsend_msg" in result
+        assert "required_parameters\tmessage,message_type" in result
+        assert "parameter\tmessage\tstring\trequired\t" in result
+        assert "parameter\tmessage_type\tstring\trequired\t" in result
+        assert "call_tool\tnapcat_call_tool" in result
+        assert '"tool_name":"napcat_send_msg"' in result
     finally:
         await plugin.tool_db.close()
         for suffix in ("", "-wal", "-shm"):
@@ -1976,6 +2173,7 @@ async def test_search_tool_discovers_persists_and_immediately_injects_tools():
 async def test_registered_search_tool_uses_remembered_request_context():
     send_group_tool = make_function_tool("napcat_send_msg", active=False)
     plugin = NapCatFunctionToolsPlugin(context=FakeContext([send_group_tool]))
+    plugin.config["search_result_format"] = "json"
     db_path = (
         Path(__file__).resolve().parents[1]
         / f".test-registered-search-tools-{uuid.uuid4().hex}.db"
@@ -1998,8 +2196,9 @@ async def test_registered_search_tool_uses_remembered_request_context():
         result = await plugin.napcat_search_tools_tool(event, keyword="send msg")
         payload = json.loads(result)
 
-        assert payload["injected_count"] == 1
-        assert req.func_tool.get_tool("napcat_send_msg") is not None
+        assert payload["execution_tool"] == plugin.CALL_TOOL_NAME
+        assert payload["injected_count"] == 0
+        assert req.func_tool.get_tool("napcat_send_msg") is None
     finally:
         await plugin.tool_db.close()
         for suffix in ("", "-wal", "-shm"):
@@ -2009,9 +2208,87 @@ async def test_registered_search_tool_uses_remembered_request_context():
 
 
 @pytest.mark.asyncio
+async def test_call_tool_invokes_existing_tool_with_context_defaults():
+    event = make_aiocqhttp_event(group_id="654321", user_id="123456")
+    plugin = NapCatFunctionToolsPlugin(context=FakeContext([]))
+
+    result = await plugin.napcat_call_tool(
+        event,
+        tool_name="napcat_send_msg",
+        arguments={"message_type": "group", "message": "hello"},
+    )
+    payload = json.loads(result)
+
+    assert payload["status"] == "ok"
+    assert event.bot.api.calls == [
+        (
+            "send_msg",
+            {
+                "message_type": "group",
+                "message": "hello",
+                "group_id": 654321,
+                "user_id": 123456,
+            },
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_call_tool_accepts_json_string_arguments():
+    event = make_aiocqhttp_event(group_id="654321", user_id="123456")
+    plugin = NapCatFunctionToolsPlugin(context=FakeContext([]))
+
+    result = await plugin.napcat_call_tool(
+        event,
+        tool_name="napcat_get_group_info",
+        arguments='{"group_id": 654321}',
+    )
+    payload = json.loads(result)
+
+    assert payload["status"] == "ok"
+    assert event.bot.api.calls == [
+        ("get_group_info", {"group_id": 654321})
+    ]
+
+
+@pytest.mark.asyncio
+async def test_call_tool_returns_friendly_error_for_unknown_tool():
+    event = make_aiocqhttp_event(group_id="654321", user_id="123456")
+    plugin = NapCatFunctionToolsPlugin(context=FakeContext([]))
+
+    result = await plugin.napcat_call_tool(
+        event,
+        tool_name="napcat_missing_tool",
+        arguments={},
+    )
+    payload = json.loads(result)
+
+    assert payload["ok"] is False
+    assert payload["status"] == "unknown_tool"
+
+
+@pytest.mark.asyncio
+async def test_call_tool_returns_friendly_error_for_missing_required_arguments():
+    event = make_aiocqhttp_event(group_id="654321", user_id="123456")
+    plugin = NapCatFunctionToolsPlugin(context=FakeContext([]))
+
+    result = await plugin.napcat_call_tool(
+        event,
+        tool_name="napcat_send_msg",
+        arguments={"message": "hello"},
+    )
+    payload = json.loads(result)
+
+    assert payload["ok"] is False
+    assert payload["status"] == "missing_required_arguments"
+    assert payload["missing_parameters"] == ["message_type"]
+
+
+@pytest.mark.asyncio
 async def test_search_tool_normalizes_qq_keyword_to_napcat():
     send_group_tool = make_function_tool("napcat_send_msg", active=False)
     plugin = NapCatFunctionToolsPlugin(context=FakeContext([send_group_tool]))
+    plugin.config["search_result_format"] = "json"
     db_path = (
         Path(__file__).resolve().parents[1]
         / f".test-qq-normalize-search-tools-{uuid.uuid4().hex}.db"
@@ -2058,7 +2335,7 @@ async def test_registered_search_tool_returns_error_without_remembered_request_c
 
 
 @pytest.mark.asyncio
-async def test_search_tool_splits_terms_and_skips_already_discovered_candidates():
+async def test_search_tool_splits_terms_and_keeps_results_callable_without_injection():
     tool_names = {
         "napcat_get_group_info",
         "napcat_get_group_info_ex",
@@ -2069,7 +2346,7 @@ async def test_search_tool_splits_terms_and_skips_already_discovered_candidates(
     tools = [make_function_tool(tool_name, active=False) for tool_name in tool_names]
     plugin = NapCatFunctionToolsPlugin(
         context=FakeContext(tools),
-        config={"search_candidate_limit": 4},
+        config={"search_candidate_limit": 4, "search_result_format": "json"},
     )
     db_path = (
         Path(__file__).resolve().parents[1]
@@ -2085,9 +2362,6 @@ async def test_search_tool_splits_terms_and_skips_already_discovered_candidates(
             if record.tool_name in tool_names
         ]
         await plugin.tool_registry_repo.replace_all_tools(records)
-        await plugin.tool_registry_repo.replace_discovered_tool_names(
-            ["napcat_get_group_info"]
-        )
         req = ProviderRequest()
         req.func_tool = ToolSet()
         await plugin.inject_napcat_tools_on_llm_request(make_aiocqhttp_event(), req)
@@ -2104,13 +2378,12 @@ async def test_search_tool_splits_terms_and_skips_already_discovered_candidates(
         assert payload["search_terms"] == ["group", "info"]
         assert payload["candidate_limit"] == 4
         assert payload["result_limit"] == 2
-        assert "napcat_get_group_info" in payload["skipped_discovered_tools"]
-        assert "napcat_get_group_info" not in matched_names
         assert 1 <= len(matched_names) <= 2
-        assert all(req.func_tool.get_tool(tool_name) is not None for tool_name in matched_names)
-        assert (
-            await plugin.tool_registry_repo.list_discovered_tool_names()
-        )[-len(matched_names) :] == matched_names
+        assert all(
+            tool["call_tool"] == plugin.CALL_TOOL_NAME
+            for tool in payload["matched_tools"]
+        )
+        assert all(req.func_tool.get_tool(tool_name) is None for tool_name in matched_names)
     finally:
         await plugin.tool_db.close()
         for suffix in ("", "-wal", "-shm"):
@@ -2120,7 +2393,7 @@ async def test_search_tool_splits_terms_and_skips_already_discovered_candidates(
 
 
 @pytest.mark.asyncio
-async def test_search_tool_can_inject_unlimited_request_scope_tools_but_persist_limit():
+async def test_search_tool_suppresses_returned_tools_for_configured_turns():
     tool_names = {
         "napcat_get_group_info",
         "napcat_get_group_info_ex",
@@ -2132,9 +2405,9 @@ async def test_search_tool_can_inject_unlimited_request_scope_tools_but_persist_
     plugin = NapCatFunctionToolsPlugin(
         context=FakeContext(tools),
         config={
-            "discovered_tool_limit": 1,
             "search_candidate_limit": 5,
-            "unlimited_request_tool_injection": True,
+            "search_result_suppress_turns": 1,
+            "search_result_format": "json",
         },
     )
     db_path = (
@@ -2151,38 +2424,47 @@ async def test_search_tool_can_inject_unlimited_request_scope_tools_but_persist_
             if record.tool_name in tool_names
         ]
         await plugin.tool_registry_repo.replace_all_tools(records)
-        req = ProviderRequest()
+        event = make_aiocqhttp_event(group_id="654321")
+        req = ProviderRequest(contexts=[{"role": "user", "content": "one"}])
         req.func_tool = ToolSet()
-        await plugin.inject_napcat_tools_on_llm_request(make_aiocqhttp_event(), req)
+        await plugin.inject_napcat_tools_on_llm_request(event, req)
 
         search_tool = req.func_tool.get_tool(plugin.SEARCH_TOOL_NAME)
         first = json.loads(
             await search_tool.handler(
-                make_aiocqhttp_event(),
+                event,
                 keyword="group",
                 result_limit=2,
             )
         )
-        first_names = [tool["name"] for tool in first["matched_tools"]]
+        next_req = ProviderRequest(
+            contexts=[
+                {"role": "user", "content": "one"},
+                {"role": "assistant", "content": "two"},
+            ],
+        )
+        next_req.func_tool = ToolSet()
+        await plugin.inject_napcat_tools_on_llm_request(event, next_req)
         second = json.loads(
             await search_tool.handler(
-                make_aiocqhttp_event(),
+                event,
                 keyword="group",
                 result_limit=2,
             )
         )
-        second_names = [tool["name"] for tool in second["matched_tools"]]
         request_scope_names = {
             name for name in tool_names if req.func_tool.get_tool(name) is not None
         }
-        persisted_names = await plugin.tool_registry_repo.list_discovered_tool_names()
+        first_names = {tool["name"] for tool in first["matched_tools"]}
+        second_names = {tool["name"] for tool in second["matched_tools"]}
 
-        assert first["unlimited_request_tool_injection"] is True
-        assert second["unlimited_request_tool_injection"] is True
-        assert set(first_names).isdisjoint(second_names)
-        assert len(request_scope_names) > len(persisted_names)
-        assert len(persisted_names) <= 1
-        assert second["request_scope_tool_count"] == len(request_scope_names)
+        assert first["injected_count"] == 0
+        assert second["injected_count"] == 0
+        assert first["execution_tool"] == plugin.CALL_TOOL_NAME
+        assert second["execution_tool"] == plugin.CALL_TOOL_NAME
+        assert second["suppressed_tool_count"] >= len(first_names)
+        assert first_names.isdisjoint(second_names)
+        assert request_scope_names == set()
     finally:
         await plugin.tool_db.close()
         for suffix in ("", "-wal", "-shm"):
@@ -2192,9 +2474,76 @@ async def test_search_tool_can_inject_unlimited_request_scope_tools_but_persist_
 
 
 @pytest.mark.asyncio
-async def test_search_tool_filters_platform_specific_results_before_persisting():
+async def test_search_suppression_resets_when_request_history_is_cleared():
+    tool_names = {
+        "napcat_get_group_info",
+        "napcat_get_group_info_ex",
+        "napcat_get_group_list",
+        "napcat_get_group_member_info",
+    }
+    plugin = NapCatFunctionToolsPlugin(
+        context=FakeContext([make_function_tool(name, active=False) for name in tool_names]),
+        config={
+            "search_candidate_limit": 5,
+            "search_result_suppress_turns": 0,
+            "search_result_format": "json",
+        },
+    )
+    db_path = (
+        Path(__file__).resolve().parents[1]
+        / f".test-search-history-reset-{uuid.uuid4().hex}.db"
+    )
+    plugin.tool_db = ToolDBManager(str(db_path))
+    plugin.tool_registry_repo = ToolRegistryRepo(plugin.tool_db)
+    await plugin.tool_db.init_db()
+    try:
+        records = [
+            record
+            for record in build_tool_registry_data(NapCatFunctionToolsPlugin)
+            if record.tool_name in tool_names
+        ]
+        await plugin.tool_registry_repo.replace_all_tools(records)
+        event = make_aiocqhttp_event(group_id="654321")
+        req = ProviderRequest(
+            contexts=[
+                {"role": "user", "content": "one"},
+                {"role": "assistant", "content": "two"},
+                {"role": "user", "content": "three"},
+            ],
+        )
+        req.func_tool = ToolSet()
+        await plugin.inject_napcat_tools_on_llm_request(event, req)
+        search_tool = req.func_tool.get_tool(plugin.SEARCH_TOOL_NAME)
+
+        first = json.loads(
+            await search_tool.handler(event, keyword="group", result_limit=1)
+        )
+        blocked = json.loads(
+            await search_tool.handler(event, keyword="group", result_limit=1)
+        )
+        reset_req = ProviderRequest(contexts=[{"role": "user", "content": "fresh"}])
+        reset_req.func_tool = ToolSet()
+        await plugin.inject_napcat_tools_on_llm_request(event, reset_req)
+        reset = json.loads(
+            await search_tool.handler(event, keyword="group", result_limit=1)
+        )
+
+        first_name = first["matched_tools"][0]["name"]
+        assert first_name not in {tool["name"] for tool in blocked["matched_tools"]}
+        assert reset["matched_tools"][0]["name"] == first_name
+    finally:
+        await plugin.tool_db.close()
+        for suffix in ("", "-wal", "-shm"):
+            path = Path(str(db_path) + suffix)
+            if path.exists():
+                path.unlink()
+
+
+@pytest.mark.asyncio
+async def test_search_tool_filters_platform_specific_results_before_suppressing():
     ocr_tool = make_function_tool("napcat_dot_ocr_image", active=False)
     plugin = NapCatFunctionToolsPlugin(context=FakeContext([ocr_tool]))
+    plugin.config["search_result_format"] = "json"
     plugin.current_platform_name = "linux"
     db_path = (
         Path(__file__).resolve().parents[1]
@@ -2220,7 +2569,6 @@ async def test_search_tool_filters_platform_specific_results_before_persisting()
         payload = json.loads(result)
 
         assert payload["matched_tools"] == []
-        assert await plugin.tool_registry_repo.list_discovered_tool_names() == []
         assert req.func_tool.get_tool("napcat_dot_ocr_image") is None
     finally:
         await plugin.tool_db.close()
@@ -2228,3 +2576,55 @@ async def test_search_tool_filters_platform_specific_results_before_persisting()
             path = Path(str(db_path) + suffix)
             if path.exists():
                 path.unlink()
+
+
+@pytest.mark.asyncio
+async def test_search_tool_rejects_non_admin():
+    event = make_aiocqhttp_event(group_id="654321", user_id="123456", is_admin=False)
+    plugin = NapCatFunctionToolsPlugin(context=FakeContext([]))
+    req = ProviderRequest()
+    req.func_tool = ToolSet()
+    result = await plugin._run_search_tool(event, req, keyword="send msg")
+    payload = json.loads(result)
+    assert payload["ok"] is False
+    assert "权限不足" in payload["message"]
+
+
+@pytest.mark.asyncio
+async def test_call_tool_rejects_non_admin():
+    event = make_aiocqhttp_event(group_id="654321", user_id="123456", is_admin=False)
+    plugin = NapCatFunctionToolsPlugin(context=FakeContext([]))
+    result = await plugin._run_call_tool(
+        event,
+        tool_name="napcat_send_msg",
+        arguments={"message_type": "group", "message": "hello"},
+    )
+    payload = json.loads(result)
+    assert payload["ok"] is False
+    assert "权限不足" in payload["message"]
+
+
+@pytest.mark.asyncio
+async def test_search_tool_allows_admin():
+    """Admin check passes: should NOT return permission denied; DB error means check passed."""
+    event = make_aiocqhttp_event(group_id="654321", user_id="123456")
+    plugin = NapCatFunctionToolsPlugin(context=FakeContext([]))
+    req = ProviderRequest()
+    req.func_tool = ToolSet()
+    try:
+        await plugin._run_search_tool(event, req, keyword="send msg")
+    except Exception as exc:
+        assert "权限不足" not in str(exc)
+
+
+@pytest.mark.asyncio
+async def test_call_tool_allows_admin():
+    event = make_aiocqhttp_event(group_id="654321", user_id="123456")
+    plugin = NapCatFunctionToolsPlugin(context=FakeContext([]))
+    result = await plugin._run_call_tool(
+        event,
+        tool_name="napcat_send_msg",
+        arguments={"message_type": "group", "message": "hello"},
+    )
+    payload = json.loads(result)
+    assert payload["status"] == "ok"

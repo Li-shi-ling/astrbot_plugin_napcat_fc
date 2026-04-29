@@ -58,6 +58,7 @@ class ToolDBManager:
 
         async with self.engine.connect() as conn:
             await self._ensure_table_columns(conn)
+            await self._drop_legacy_discovered_tool_table(conn)
             await conn.execute(text("PRAGMA journal_mode=WAL"))
             await conn.execute(text("PRAGMA synchronous=NORMAL"))
             await conn.execute(text("PRAGMA cache_size=-20000"))
@@ -90,6 +91,9 @@ class ToolDBManager:
                     f'"{column.name}" {self._sqlite_column_definition(column)}'
                 )
             )
+
+    async def _drop_legacy_discovered_tool_table(self, conn):
+        await conn.execute(text('DROP TABLE IF EXISTS "napcat_discovered_tool"'))
 
     def _sqlite_column_definition(self, column) -> str:
         try:
@@ -151,7 +155,6 @@ class ToolDBManager:
 
         return {
             tables.NapcatToolRecord.__table__.name: tables.NapcatToolRecord.__table__,
-            tables.NapcatDiscoveredToolRecord.__table__.name: tables.NapcatDiscoveredToolRecord.__table__,
         }
 
     @asynccontextmanager

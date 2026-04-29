@@ -32,14 +32,3 @@ class NapcatToolRecord(SQLModel, table=True):
     platforms_json: str = Field(default="[]", description="platforms JSON")
     enabled: bool = Field(default=True, index=True, description="enabled")
     updated_at: datetime = Field(default_factory=datetime.now, description="updated at")
-
-
-class NapcatDiscoveredToolRecord(SQLModel, table=True):
-    """Persistent FIFO queue for tools discovered by keyword search."""
-
-    __tablename__ = "napcat_discovered_tool"
-    __table_args__ = {"extend_existing": True}
-
-    tool_name: str = Field(primary_key=True, index=True, description="tool name")
-    position: int = Field(index=True, description="queue position")
-    updated_at: datetime = Field(default_factory=datetime.now, description="updated at")

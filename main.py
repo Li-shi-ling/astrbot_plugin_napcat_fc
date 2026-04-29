@@ -389,11 +389,6 @@ Args:
 
 Returns:
     str: 返回搜索结果、参数说明和 napcat_call_tool 调用样例；格式由 search_result_format 配置控制。"""
-        if not event.is_admin():
-            return json.dumps(
-                {"ok": False, "message": "权限不足：只有 AstrBot 管理员才能使用 NapCat 工具。"},
-                ensure_ascii=False,
-            )
         req = self._get_remembered_provider_request(event)
         if req is None:
             return json.dumps(
@@ -423,12 +418,23 @@ Args:
 
 Returns:
     str: 返回目标 NapCat 工具的 JSON 字符串结果。"""
-        if not event.is_admin():
-            return json.dumps(
-                {"ok": False, "message": "权限不足：只有 AstrBot 管理员才能使用 NapCat 工具。"},
-                ensure_ascii=False,
-            )
         return await self._run_call_tool(event, tool_name, arguments)
+
+    def _admin_denied_response(self) -> str:
+        """返回统一的 admin 权限拒绝 JSON 字符串。"""
+        return json.dumps(
+            {"ok": False, "message": "权限不足：只有 AstrBot 管理员才能使用 NapCat 工具。"},
+            ensure_ascii=False,
+        )
+
+    async def _is_tool_enabled_in_db(self, tool_name: str) -> bool:
+        """查询数据库中工具的 enabled 状态，用于运行时调用前的最终校验。"""
+        try:
+            record = await self.tool_registry_repo.get_tool(tool_name)
+            return record.enabled if record is not None else False
+        except Exception:
+            self._debug_log("tool_enabled_check:db_error", tool_name=tool_name)
+            return True
 
     async def _run_search_tool(
         self,
@@ -443,6 +449,9 @@ Returns:
                 event_type=type(event).__name__,
             )
             raise ValueError("NapCat search tool requires an aiocqhttp/NapCat message event.")
+        if not event.is_admin():
+            self._debug_log("search_tool:reject_non_admin")
+            return self._admin_denied_response()
 
         original_keyword = keyword
         keyword = self._replace_qq_keyword_with_napcat(keyword)
@@ -764,6 +773,9 @@ Returns:
                 event_type=type(event).__name__,
             )
             raise ValueError("NapCat call tool requires an aiocqhttp/NapCat message event.")
+        if not event.is_admin():
+            self._debug_log("call_tool:reject_non_admin")
+            return self._admin_denied_response()
 
         normalized_tool_name = str(tool_name or "").strip()
         self._debug_log("call_tool:start", tool_name=normalized_tool_name)
@@ -776,6 +788,21 @@ Returns:
                     "status": "unknown_tool",
                     "message": "未找到该 NapCat 工具，请先调用 napcat_search_tools 搜索正确工具名。",
                     "tool_name": normalized_tool_name,
+                },
+                ensure_ascii=False,
+            )
+
+        if not await self._is_tool_enabled_in_db(record.tool_name):
+            self._debug_log(
+                "call_tool:tool_disabled",
+                tool_name=record.tool_name,
+            )
+            return json.dumps(
+                {
+                    "ok": False,
+                    "status": "tool_disabled",
+                    "message": "该 NapCat 工具已在数据库中禁用。",
+                    "tool_name": record.tool_name,
                 },
                 ensure_ascii=False,
             )

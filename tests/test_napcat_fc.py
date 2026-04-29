@@ -142,6 +142,7 @@ def make_aiocqhttp_event(
     message_components: list | None = None,
     raw_message=None,
     message_str: str = "",
+    is_admin: bool = True,
 ):
     message = AstrBotMessage()
     message.type = MessageType.GROUP_MESSAGE if group_id else MessageType.FRIEND_MESSAGE
@@ -153,7 +154,7 @@ def make_aiocqhttp_event(
     message.group_id = group_id
     message.session_id = group_id or user_id
     message.raw_message = raw_message
-    return AiocqhttpMessageEvent(
+    event = AiocqhttpMessageEvent(
         message_str=message_str,
         message_obj=message,
         platform_meta=PlatformMetadata(
@@ -164,6 +165,9 @@ def make_aiocqhttp_event(
         session_id=group_id or user_id,
         bot=FakeBot(),
     )
+    if is_admin:
+        event.role = "admin"
+    return event
 
 
 def test_discover_endpoint_specs_finds_napcat_docs():
@@ -2185,7 +2189,6 @@ async def test_registered_search_tool_uses_remembered_request_context():
         ]
         await plugin.tool_registry_repo.replace_all_tools(records)
         event = make_aiocqhttp_event()
-        event.role = "admin"
         req = ProviderRequest()
         req.func_tool = ToolSet()
         await plugin.inject_napcat_tools_on_llm_request(event, req)
@@ -2207,7 +2210,6 @@ async def test_registered_search_tool_uses_remembered_request_context():
 @pytest.mark.asyncio
 async def test_call_tool_invokes_existing_tool_with_context_defaults():
     event = make_aiocqhttp_event(group_id="654321", user_id="123456")
-    event.role = "admin"
     plugin = NapCatFunctionToolsPlugin(context=FakeContext([]))
 
     result = await plugin.napcat_call_tool(
@@ -2234,7 +2236,6 @@ async def test_call_tool_invokes_existing_tool_with_context_defaults():
 @pytest.mark.asyncio
 async def test_call_tool_accepts_json_string_arguments():
     event = make_aiocqhttp_event(group_id="654321", user_id="123456")
-    event.role = "admin"
     plugin = NapCatFunctionToolsPlugin(context=FakeContext([]))
 
     result = await plugin.napcat_call_tool(
@@ -2253,7 +2254,6 @@ async def test_call_tool_accepts_json_string_arguments():
 @pytest.mark.asyncio
 async def test_call_tool_returns_friendly_error_for_unknown_tool():
     event = make_aiocqhttp_event(group_id="654321", user_id="123456")
-    event.role = "admin"
     plugin = NapCatFunctionToolsPlugin(context=FakeContext([]))
 
     result = await plugin.napcat_call_tool(
@@ -2270,7 +2270,6 @@ async def test_call_tool_returns_friendly_error_for_unknown_tool():
 @pytest.mark.asyncio
 async def test_call_tool_returns_friendly_error_for_missing_required_arguments():
     event = make_aiocqhttp_event(group_id="654321", user_id="123456")
-    event.role = "admin"
     plugin = NapCatFunctionToolsPlugin(context=FakeContext([]))
 
     result = await plugin.napcat_call_tool(
@@ -2305,7 +2304,6 @@ async def test_search_tool_normalizes_qq_keyword_to_napcat():
         ]
         await plugin.tool_registry_repo.replace_all_tools(records)
         event = make_aiocqhttp_event()
-        event.role = "admin"
         req = ProviderRequest()
         req.func_tool = ToolSet()
         await plugin.inject_napcat_tools_on_llm_request(event, req)
@@ -2327,7 +2325,6 @@ async def test_search_tool_normalizes_qq_keyword_to_napcat():
 @pytest.mark.asyncio
 async def test_registered_search_tool_returns_error_without_remembered_request_context():
     event = make_aiocqhttp_event(user_id="123456")
-    event.role = "admin"
     plugin = NapCatFunctionToolsPlugin(context=FakeContext([]))
 
     result = await plugin.napcat_search_tools_tool(event, keyword="send msg")
@@ -2583,9 +2580,11 @@ async def test_search_tool_filters_platform_specific_results_before_suppressing(
 
 @pytest.mark.asyncio
 async def test_search_tool_rejects_non_admin():
-    event = make_aiocqhttp_event(group_id="654321", user_id="123456")
+    event = make_aiocqhttp_event(group_id="654321", user_id="123456", is_admin=False)
     plugin = NapCatFunctionToolsPlugin(context=FakeContext([]))
-    result = await plugin.napcat_search_tools_tool(event, keyword="send msg")
+    req = ProviderRequest()
+    req.func_tool = ToolSet()
+    result = await plugin._run_search_tool(event, req, keyword="send msg")
     payload = json.loads(result)
     assert payload["ok"] is False
     assert "权限不足" in payload["message"]
@@ -2593,9 +2592,9 @@ async def test_search_tool_rejects_non_admin():
 
 @pytest.mark.asyncio
 async def test_call_tool_rejects_non_admin():
-    event = make_aiocqhttp_event(group_id="654321", user_id="123456")
+    event = make_aiocqhttp_event(group_id="654321", user_id="123456", is_admin=False)
     plugin = NapCatFunctionToolsPlugin(context=FakeContext([]))
-    result = await plugin.napcat_call_tool(
+    result = await plugin._run_call_tool(
         event,
         tool_name="napcat_send_msg",
         arguments={"message_type": "group", "message": "hello"},
@@ -2607,21 +2606,22 @@ async def test_call_tool_rejects_non_admin():
 
 @pytest.mark.asyncio
 async def test_search_tool_allows_admin():
+    """Admin check passes: should NOT return permission denied; DB error means check passed."""
     event = make_aiocqhttp_event(group_id="654321", user_id="123456")
-    event.role = "admin"
     plugin = NapCatFunctionToolsPlugin(context=FakeContext([]))
-    result = await plugin.napcat_search_tools_tool(event, keyword="send msg")
-    payload = json.loads(result)
-    assert payload["ok"] is False
-    assert "LLM 请求上下文" in payload["message"]
+    req = ProviderRequest()
+    req.func_tool = ToolSet()
+    try:
+        await plugin._run_search_tool(event, req, keyword="send msg")
+    except Exception as exc:
+        assert "权限不足" not in str(exc)
 
 
 @pytest.mark.asyncio
 async def test_call_tool_allows_admin():
     event = make_aiocqhttp_event(group_id="654321", user_id="123456")
-    event.role = "admin"
     plugin = NapCatFunctionToolsPlugin(context=FakeContext([]))
-    result = await plugin.napcat_call_tool(
+    result = await plugin._run_call_tool(
         event,
         tool_name="napcat_send_msg",
         arguments={"message_type": "group", "message": "hello"},

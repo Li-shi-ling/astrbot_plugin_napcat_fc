@@ -389,6 +389,11 @@ Args:
 
 Returns:
     str: 返回搜索结果、参数说明和 napcat_call_tool 调用样例；格式由 search_result_format 配置控制。"""
+        if not event.is_admin():
+            return json.dumps(
+                {"ok": False, "message": "权限不足：只有 AstrBot 管理员才能使用 NapCat 工具。"},
+                ensure_ascii=False,
+            )
         req = self._get_remembered_provider_request(event)
         if req is None:
             return json.dumps(
@@ -418,6 +423,11 @@ Args:
 
 Returns:
     str: 返回目标 NapCat 工具的 JSON 字符串结果。"""
+        if not event.is_admin():
+            return json.dumps(
+                {"ok": False, "message": "权限不足：只有 AstrBot 管理员才能使用 NapCat 工具。"},
+                ensure_ascii=False,
+            )
         return await self._run_call_tool(event, tool_name, arguments)
 
     async def _run_search_tool(

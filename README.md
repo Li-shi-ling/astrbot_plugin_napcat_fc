@@ -1,13 +1,13 @@
 ﻿# NapCat 函数工具
 
-这是一个 AstrBot 插件，用于把本地文档中的 NapCat / OneBot / go-cqhttp 用户 API 提供为可供 LLM 调用的函数工具。插件只向 LLM 稳定提供 `napcat_search_tools` 和 `napcat_call_tool` 两个入口：先搜索工具能力和参数，再通过通用调用工具执行具体 NapCat API，避免动态改变工具列表影响缓存命中率。两个工具入口均要求调用者为 AstrBot 管理员，非管理员调用时返回权限不足提示。
+这是一个 AstrBot 插件，用于把本地文档中的 NapCat / OneBot / go-cqhttp 用户 API 提供为可供 LLM 调用的函数工具。插件只向 LLM 稳定提供 `napcat_search_tools` 和 `napcat_call_tool` 两个入口：先搜索工具能力和参数，再通过通用调用工具执行具体 NapCat API，避免动态改变工具列表影响缓存命中率。默认仅允许 AstrBot 管理员使用这两个入口，非管理员调用时返回权限不足提示；可通过 `admin_only` 配置关闭该限制。
 
 ## 功能
 
 - 基于 `docs/napcat-apifox`、`docs/onebot-11` 和 `docs/go-cqhttp` 生成工具定义。
 - 每个发现到的用户 API 都有一个 `# napcat_tool: napcat_<接口名>` 元数据标记和对应异步方法，供工具数据库生成、搜索和按需构造使用。
 - 具体接口工具使用字段级参数，例如 `group_id`、`user_id`、`message`，不要求 LLM 传入统一 `payload`。
-- 管理员权限保护：`napcat_search_tools` 和 `napcat_call_tool` 仅允许 AstrBot 管理员调用，通过 `event.is_admin()` 校验身份，非管理员返回可读 JSON 权限拒绝提示。
+- 管理员权限保护：`admin_only` 默认开启，`napcat_search_tools` 和 `napcat_call_tool` 会通过 `event.is_admin()` 校验身份，非管理员返回可读 JSON 权限拒绝提示；关闭后非管理员也可使用这两个入口。
 - 工具能力提示保持为面向 LLM 的中文说明，不在能力描述中重复 `能力:`、API 路径或 Markdown 表格；提示应覆盖动作、对象和常见搜索词，便于 `napcat_search_tools` 发现对应工具。
 - 工具提示词优化进度记录在 `TODO.md`；当前保留注册的 160 个工具已全部完成提示词优化。
 - 低价值、危险、重复或更适合隐藏的工具候选记录在 `待删除.md`，用于后续决定删除、禁用或从工具发现中隐藏。
@@ -60,6 +60,8 @@
 搜索工具不会写入持久化发现队列，也不会根据历史搜索结果注入具体工具。旧版 `napcat_discovered_tool` 表会在插件启动迁移时清理。搜索工具每次会先取 `search_candidate_limit` 个候选，默认值为 10，再按综合相关度返回前 `result_limit` 个候选及调用说明。
 
 如需调整搜索候选池大小，可在插件配置中设置 `search_candidate_limit`，默认 `10`，最小有效值为 `1`。
+
+如需调整管理员限制，可在插件配置中设置 `admin_only`，默认 `true`。开启时只有 AstrBot 管理员能使用 `napcat_search_tools` 和 `napcat_call_tool`；关闭后非管理员也能搜索和调用 NapCat 工具，请确认风险后再关闭。
 
 如需调整搜索结果格式，可在插件配置中设置 `search_result_format`，默认 `pipe`。`pipe` 和 `tsv` 为完整文本调用说明，会返回每个候选工具的工具名、接口名、用途、风险信息、完整参数描述、必填参数、调用样例和 `napcat_call_tool` 使用说明；`json` 为完整结构化格式，适合调试或兼容旧工作流。
 

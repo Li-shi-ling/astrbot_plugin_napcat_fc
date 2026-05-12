@@ -59,7 +59,7 @@ from napcat_fc.tool_registry import build_tool_registry_data
     "astrbot_plugin_napcat_fc",
     "Soulter / AstrBot contributors",
     "将 NapCat / OneBot / go-cqhttp API 注册为 AstrBot 函数工具。",
-    "1.16.3",
+    "1.16.4",
 )
 class NapCatFunctionToolsPlugin(Star):
     SEARCH_TOOL_NAME = "napcat_search_tools"
@@ -69,6 +69,7 @@ class NapCatFunctionToolsPlugin(Star):
     SEARCH_RESULT_FORMAT = "pipe"
     SEARCH_RESULT_FORMATS = ("pipe", "tsv", "json")
     SEARCH_RESULT_SUPPRESS_TURNS = 3
+    ADMIN_ONLY = True
     INFORMATION_ACTION_PREFIXES = (
         "get_",
         "_get_",
@@ -427,6 +428,16 @@ Returns:
             ensure_ascii=False,
         )
 
+    def _is_admin_only_enabled(self) -> bool:
+        """读取管理员限制开关；缺省保持安全模式。"""
+        return self.config.get("admin_only", self.ADMIN_ONLY) is not False
+
+    def _can_use_napcat_entry_tools(self, event: AstrMessageEvent) -> bool:
+        """判断当前事件是否允许使用 NapCat 搜索和调用入口。"""
+        if not self._is_admin_only_enabled():
+            return True
+        return bool(event.is_admin())
+
     async def _is_tool_enabled_in_db(self, tool_name: str) -> bool:
         """查询数据库中工具的 enabled 状态，用于运行时调用前的最终校验。"""
         try:
@@ -449,8 +460,11 @@ Returns:
                 event_type=type(event).__name__,
             )
             raise ValueError("NapCat search tool requires an aiocqhttp/NapCat message event.")
-        if not event.is_admin():
-            self._debug_log("search_tool:reject_non_admin")
+        if not self._can_use_napcat_entry_tools(event):
+            self._debug_log(
+                "search_tool:reject_non_admin",
+                admin_only=self._is_admin_only_enabled(),
+            )
             return self._admin_denied_response()
 
         original_keyword = keyword
@@ -773,8 +787,11 @@ Returns:
                 event_type=type(event).__name__,
             )
             raise ValueError("NapCat call tool requires an aiocqhttp/NapCat message event.")
-        if not event.is_admin():
-            self._debug_log("call_tool:reject_non_admin")
+        if not self._can_use_napcat_entry_tools(event):
+            self._debug_log(
+                "call_tool:reject_non_admin",
+                admin_only=self._is_admin_only_enabled(),
+            )
             return self._admin_denied_response()
 
         normalized_tool_name = str(tool_name or "").strip()

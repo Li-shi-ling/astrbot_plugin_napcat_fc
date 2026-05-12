@@ -5,6 +5,12 @@
     "hint": "排查工具搜索、工具调用、搜索屏蔽队列、数据库同步问题时开启；正常使用建议关闭。",
     "default": false
   },
+  "admin_only": {
+    "description": "是否仅允许 AstrBot 管理员使用 NapCat 搜索和调用工具。",
+    "type": "bool",
+    "hint": "默认开启。开启后 napcat_search_tools 和 napcat_call_tool 会通过 event.is_admin() 校验调用者；关闭后非管理员也可以使用这两个入口，请确认风险后再关闭。",
+    "default": true
+  },
   "search_candidate_limit": {
     "description": "NapCat 搜索工具每次参与综合排序的候选工具数量。",
     "type": "int",

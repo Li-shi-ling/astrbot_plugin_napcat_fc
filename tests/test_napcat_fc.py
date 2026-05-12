@@ -2604,6 +2604,70 @@ async def test_call_tool_rejects_non_admin():
     assert "权限不足" in payload["message"]
 
 
+def test_admin_only_config_defaults_to_enabled_and_accepts_false():
+    plugin = NapCatFunctionToolsPlugin(context=FakeContext([]))
+    assert plugin._is_admin_only_enabled() is True
+
+    plugin.config["admin_only"] = False
+    assert plugin._is_admin_only_enabled() is False
+
+    plugin.config["admin_only"] = True
+    assert plugin._is_admin_only_enabled() is True
+
+
+@pytest.mark.asyncio
+async def test_search_tool_allows_non_admin_when_admin_only_disabled():
+    event = make_aiocqhttp_event(group_id="654321", user_id="123456", is_admin=False)
+    plugin = NapCatFunctionToolsPlugin(
+        context=FakeContext([]),
+        config={"admin_only": False, "search_result_format": "json"},
+    )
+    db_path = (
+        Path(__file__).resolve().parents[1]
+        / f".test-admin-disabled-search-tools-{uuid.uuid4().hex}.db"
+    )
+    plugin.tool_db = ToolDBManager(str(db_path))
+    plugin.tool_registry_repo = ToolRegistryRepo(plugin.tool_db)
+    await plugin.tool_db.init_db()
+    try:
+        records = [
+            record
+            for record in build_tool_registry_data(NapCatFunctionToolsPlugin)
+            if record.tool_name == "napcat_send_msg"
+        ]
+        await plugin.tool_registry_repo.replace_all_tools(records)
+        req = ProviderRequest()
+        req.func_tool = ToolSet()
+
+        result = await plugin._run_search_tool(event, req, keyword="发送消息")
+        payload = json.loads(result)
+
+        assert payload["matched_tools"]
+        assert payload["matched_tools"][0]["name"] == "napcat_send_msg"
+    finally:
+        await plugin.tool_db.close()
+        for suffix in ("", "-wal", "-shm"):
+            path = Path(str(db_path) + suffix)
+            if path.exists():
+                path.unlink()
+
+
+@pytest.mark.asyncio
+async def test_call_tool_allows_non_admin_when_admin_only_disabled():
+    event = make_aiocqhttp_event(group_id="654321", user_id="123456", is_admin=False)
+    plugin = NapCatFunctionToolsPlugin(
+        context=FakeContext([]),
+        config={"admin_only": False},
+    )
+    result = await plugin._run_call_tool(
+        event,
+        tool_name="napcat_send_msg",
+        arguments={"message_type": "group", "message": "hello"},
+    )
+    payload = json.loads(result)
+    assert payload["status"] == "ok"
+
+
 @pytest.mark.asyncio
 async def test_search_tool_allows_admin():
     """Admin check passes: should NOT return permission denied; DB error means check passed."""

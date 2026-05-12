@@ -59,7 +59,7 @@ from napcat_fc.tool_registry import build_tool_registry_data
     "astrbot_plugin_napcat_fc",
     "Soulter / AstrBot contributors",
     "将 NapCat / OneBot / go-cqhttp API 注册为 AstrBot 函数工具。",
-    "1.16.4",
+    "1.16.5",
 )
 class NapCatFunctionToolsPlugin(Star):
     SEARCH_TOOL_NAME = "napcat_search_tools"
@@ -69,7 +69,8 @@ class NapCatFunctionToolsPlugin(Star):
     SEARCH_RESULT_FORMAT = "pipe"
     SEARCH_RESULT_FORMATS = ("pipe", "tsv", "json")
     SEARCH_RESULT_SUPPRESS_TURNS = 3
-    ADMIN_ONLY = True
+    ENABLE_SENDER_ID_FILTER = False
+    ALLOWED_SENDER_IDS = ()
     INFORMATION_ACTION_PREFIXES = (
         "get_",
         "_get_",
@@ -421,22 +422,47 @@ Returns:
     str: 返回目标 NapCat 工具的 JSON 字符串结果。"""
         return await self._run_call_tool(event, tool_name, arguments)
 
-    def _admin_denied_response(self) -> str:
-        """返回统一的 admin 权限拒绝 JSON 字符串。"""
+    def _sender_denied_response(self, sender_id: str) -> str:
+        """返回统一的发送者白名单拒绝 JSON 字符串。"""
         return json.dumps(
-            {"ok": False, "message": "权限不足：只有 AstrBot 管理员才能使用 NapCat 工具。"},
+            {
+                "ok": False,
+                "message": "权限不足：当前消息发送者不在 NapCat 工具允许列表中。",
+                "sender_id": sender_id,
+            },
             ensure_ascii=False,
         )
 
-    def _is_admin_only_enabled(self) -> bool:
-        """读取管理员限制开关；缺省保持安全模式。"""
-        return self.config.get("admin_only", self.ADMIN_ONLY) is not False
+    def _get_allowed_sender_ids(self) -> set[str]:
+        """读取允许使用 NapCat 入口工具的消息发送者 ID 白名单。"""
+        raw_value = self.config.get("allowed_sender_ids", self.ALLOWED_SENDER_IDS)
+        if raw_value is None:
+            return set()
+        if isinstance(raw_value, str):
+            values = re.split(r"[\s,;，；]+", raw_value)
+        elif isinstance(raw_value, (list, tuple, set)):
+            values = raw_value
+        else:
+            values = (raw_value,)
+        return {
+            str(value).strip()
+            for value in values
+            if str(value).strip()
+        }
+
+    def _is_sender_id_filter_enabled(self) -> bool:
+        """读取发送者 ID 过滤开关；关闭时不检查白名单。"""
+        return bool(
+            self.config.get("enable_sender_id_filter", self.ENABLE_SENDER_ID_FILTER)
+        )
 
     def _can_use_napcat_entry_tools(self, event: AstrMessageEvent) -> bool:
         """判断当前事件是否允许使用 NapCat 搜索和调用入口。"""
-        if not self._is_admin_only_enabled():
+        if not self._is_sender_id_filter_enabled():
             return True
-        return bool(event.is_admin())
+        allowed_sender_ids = self._get_allowed_sender_ids()
+        sender_id = str(event.get_sender_id())
+        return sender_id in allowed_sender_ids
 
     async def _is_tool_enabled_in_db(self, tool_name: str) -> bool:
         """查询数据库中工具的 enabled 状态，用于运行时调用前的最终校验。"""
@@ -461,11 +487,14 @@ Returns:
             )
             raise ValueError("NapCat search tool requires an aiocqhttp/NapCat message event.")
         if not self._can_use_napcat_entry_tools(event):
+            sender_id = str(event.get_sender_id())
             self._debug_log(
-                "search_tool:reject_non_admin",
-                admin_only=self._is_admin_only_enabled(),
+                "search_tool:reject_sender_id",
+                sender_id=sender_id,
+                allowed_sender_ids=sorted(self._get_allowed_sender_ids()),
+                enable_sender_id_filter=self._is_sender_id_filter_enabled(),
             )
-            return self._admin_denied_response()
+            return self._sender_denied_response(sender_id)
 
         original_keyword = keyword
         keyword = self._replace_qq_keyword_with_napcat(keyword)
@@ -788,11 +817,14 @@ Returns:
             )
             raise ValueError("NapCat call tool requires an aiocqhttp/NapCat message event.")
         if not self._can_use_napcat_entry_tools(event):
+            sender_id = str(event.get_sender_id())
             self._debug_log(
-                "call_tool:reject_non_admin",
-                admin_only=self._is_admin_only_enabled(),
+                "call_tool:reject_sender_id",
+                sender_id=sender_id,
+                allowed_sender_ids=sorted(self._get_allowed_sender_ids()),
+                enable_sender_id_filter=self._is_sender_id_filter_enabled(),
             )
-            return self._admin_denied_response()
+            return self._sender_denied_response(sender_id)
 
         normalized_tool_name = str(tool_name or "").strip()
         self._debug_log("call_tool:start", tool_name=normalized_tool_name)

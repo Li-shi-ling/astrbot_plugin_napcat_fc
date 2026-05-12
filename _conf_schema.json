@@ -5,11 +5,17 @@
     "hint": "排查工具搜索、工具调用、搜索屏蔽队列、数据库同步问题时开启；正常使用建议关闭。",
     "default": false
   },
-  "admin_only": {
-    "description": "是否仅允许 AstrBot 管理员使用 NapCat 搜索和调用工具。",
+  "enable_sender_id_filter": {
+    "description": "是否启用消息发送者 ID 过滤。",
     "type": "bool",
-    "hint": "默认开启。开启后 napcat_search_tools 和 napcat_call_tool 会通过 event.is_admin() 校验调用者；关闭后非管理员也可以使用这两个入口，请确认风险后再关闭。",
-    "default": true
+    "hint": "默认关闭。关闭时不限制发送者；开启后只允许 allowed_sender_ids 中的消息发送者使用 napcat_search_tools 和 napcat_call_tool。该开关优先级高于列表，且不使用 AstrBot 管理员身份。",
+    "default": false
+  },
+  "allowed_sender_ids": {
+    "description": "允许使用 NapCat 搜索和调用工具的消息发送者 QQ 号列表。",
+    "type": "list",
+    "hint": "仅在 enable_sender_id_filter 开启时生效。插件只读取 event.get_sender_id()，如果当前消息是回复消息，也只使用发起本条消息的人，不使用被回复消息的发送者。",
+    "default": []
   },
   "search_candidate_limit": {
     "description": "NapCat 搜索工具每次参与综合排序的候选工具数量。",

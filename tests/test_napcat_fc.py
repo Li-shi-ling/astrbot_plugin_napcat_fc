@@ -2579,21 +2579,34 @@ async def test_search_tool_filters_platform_specific_results_before_suppressing(
 
 
 @pytest.mark.asyncio
-async def test_search_tool_rejects_non_admin():
-    event = make_aiocqhttp_event(group_id="654321", user_id="123456", is_admin=False)
-    plugin = NapCatFunctionToolsPlugin(context=FakeContext([]))
+async def test_search_tool_rejects_sender_id_not_in_allowed_list():
+    event = make_aiocqhttp_event(group_id="654321", user_id="123456")
+    plugin = NapCatFunctionToolsPlugin(
+        context=FakeContext([]),
+        config={
+            "enable_sender_id_filter": True,
+            "allowed_sender_ids": ["654321"],
+        },
+    )
     req = ProviderRequest()
     req.func_tool = ToolSet()
     result = await plugin._run_search_tool(event, req, keyword="send msg")
     payload = json.loads(result)
     assert payload["ok"] is False
     assert "权限不足" in payload["message"]
+    assert payload["sender_id"] == "123456"
 
 
 @pytest.mark.asyncio
-async def test_call_tool_rejects_non_admin():
-    event = make_aiocqhttp_event(group_id="654321", user_id="123456", is_admin=False)
-    plugin = NapCatFunctionToolsPlugin(context=FakeContext([]))
+async def test_call_tool_rejects_sender_id_not_in_allowed_list():
+    event = make_aiocqhttp_event(group_id="654321", user_id="123456")
+    plugin = NapCatFunctionToolsPlugin(
+        context=FakeContext([]),
+        config={
+            "enable_sender_id_filter": True,
+            "allowed_sender_ids": ["654321"],
+        },
+    )
     result = await plugin._run_call_tool(
         event,
         tool_name="napcat_send_msg",
@@ -2602,25 +2615,51 @@ async def test_call_tool_rejects_non_admin():
     payload = json.loads(result)
     assert payload["ok"] is False
     assert "权限不足" in payload["message"]
+    assert payload["sender_id"] == "123456"
 
 
-def test_admin_only_config_defaults_to_enabled_and_accepts_false():
+def test_sender_id_filter_switch_has_priority_over_allowed_list():
     plugin = NapCatFunctionToolsPlugin(context=FakeContext([]))
-    assert plugin._is_admin_only_enabled() is True
+    event = make_aiocqhttp_event(user_id="123456", is_admin=False)
 
-    plugin.config["admin_only"] = False
-    assert plugin._is_admin_only_enabled() is False
+    assert plugin._is_sender_id_filter_enabled() is False
+    assert plugin._can_use_napcat_entry_tools(event) is True
 
-    plugin.config["admin_only"] = True
-    assert plugin._is_admin_only_enabled() is True
+    plugin.config["enable_sender_id_filter"] = True
+    plugin.config["allowed_sender_ids"] = ["654321"]
+    assert plugin._can_use_napcat_entry_tools(event) is False
+
+    plugin.config["enable_sender_id_filter"] = False
+    assert plugin._can_use_napcat_entry_tools(event) is True
+
+
+def test_sender_id_filter_only_uses_current_message_sender():
+    event = make_aiocqhttp_event(
+        user_id="123456",
+        message_components=[Reply(id="456")],
+        is_admin=True,
+    )
+    plugin = NapCatFunctionToolsPlugin(
+        context=FakeContext([]),
+        config={
+            "enable_sender_id_filter": True,
+            "allowed_sender_ids": ["456"],
+        },
+    )
+
+    assert plugin._can_use_napcat_entry_tools(event) is False
 
 
 @pytest.mark.asyncio
-async def test_search_tool_allows_non_admin_when_admin_only_disabled():
+async def test_search_tool_allows_sender_id_in_allowed_list():
     event = make_aiocqhttp_event(group_id="654321", user_id="123456", is_admin=False)
     plugin = NapCatFunctionToolsPlugin(
         context=FakeContext([]),
-        config={"admin_only": False, "search_result_format": "json"},
+        config={
+            "enable_sender_id_filter": True,
+            "allowed_sender_ids": ["123456"],
+            "search_result_format": "json",
+        },
     )
     db_path = (
         Path(__file__).resolve().parents[1]
@@ -2653,11 +2692,14 @@ async def test_search_tool_allows_non_admin_when_admin_only_disabled():
 
 
 @pytest.mark.asyncio
-async def test_call_tool_allows_non_admin_when_admin_only_disabled():
+async def test_call_tool_allows_sender_id_in_allowed_list():
     event = make_aiocqhttp_event(group_id="654321", user_id="123456", is_admin=False)
     plugin = NapCatFunctionToolsPlugin(
         context=FakeContext([]),
-        config={"admin_only": False},
+        config={
+            "enable_sender_id_filter": True,
+            "allowed_sender_ids": ["123456"],
+        },
     )
     result = await plugin._run_call_tool(
         event,
@@ -2669,9 +2711,9 @@ async def test_call_tool_allows_non_admin_when_admin_only_disabled():
 
 
 @pytest.mark.asyncio
-async def test_search_tool_allows_admin():
-    """Admin check passes: should NOT return permission denied; DB error means check passed."""
-    event = make_aiocqhttp_event(group_id="654321", user_id="123456")
+async def test_search_tool_allows_when_sender_id_filter_disabled():
+    """关闭发送者 ID 过滤后，不再检查 AstrBot 管理员身份或白名单。"""
+    event = make_aiocqhttp_event(group_id="654321", user_id="123456", is_admin=False)
     plugin = NapCatFunctionToolsPlugin(context=FakeContext([]))
     req = ProviderRequest()
     req.func_tool = ToolSet()
@@ -2682,8 +2724,8 @@ async def test_search_tool_allows_admin():
 
 
 @pytest.mark.asyncio
-async def test_call_tool_allows_admin():
-    event = make_aiocqhttp_event(group_id="654321", user_id="123456")
+async def test_call_tool_allows_when_sender_id_filter_disabled():
+    event = make_aiocqhttp_event(group_id="654321", user_id="123456", is_admin=False)
     plugin = NapCatFunctionToolsPlugin(context=FakeContext([]))
     result = await plugin._run_call_tool(
         event,
